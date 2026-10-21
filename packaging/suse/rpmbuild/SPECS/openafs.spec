@@ -53,7 +53,12 @@
 %define build_kernel_modules 1
 %endif
 
+# flag for firewalld, only required for SLE-12
+%if 0%{?sle_version} <= 120500 && !0%{?is_opensuse}
+%define have_firewalld 0
+%else
 %define have_firewalld 1
+%endif
 
 #
 # package internal directories
@@ -75,7 +80,7 @@
 # update with the version in the tar files (e.g. 1.8.8.1-8-gl18924 )
 %define upstream_version 1.8.14
 %define package_version 1.8.14
-%define release_version %{?release}%{!?release:1}
+%define release_version %{?release}%{!?release:2}
 
 Name:           openafs
 
@@ -521,7 +526,11 @@ cp -a %{S:57} %{buildroot}/%{viceetcdir}/ThisCell
 cp -a %{S:58} %{buildroot}/%{viceetcdir}/cacheinfo
 cp -a src/afs/afszcm.cat %{buildroot}%{_datadir}/openafs/C
 install -m 644 %{S:27} %{buildroot}/%{_fillupdir}/sysconfig.openafs-client
+%if 0%{?sle_version} > 150000 
 install -m 644 %{S:24} %{buildroot}/%_unitdir/openafs-client.service
+%else
+install -m 644 %{S:23} %{buildroot}/%_unitdir
+%endif
 ln -s %{_sbindir}/service %{buildroot}/%{_sbindir}/rcopenafs-client
 
 #
@@ -728,6 +737,7 @@ echo sh ./build-modules.sh install
 
 %preun fuse_client
 %service_del_preun openafs-fuse-client.service
+%{stop_on_removal}
 
 %post fuse_client
 if [ ! -d /afs ]; then
@@ -790,6 +800,7 @@ else
 fi
 
 %preun client
+%{stop_on_removal}
 %service_del_preun openafs-client.service
 
 %postun client
@@ -833,6 +844,7 @@ dkms remove -m %{name} -v %{version} --rpm_safe_upgrade --all ||:
 
 %preun server
 %service_del_preun openafs-server.service
+%{stop_on_removal}
 
 %postun server
 /sbin/ldconfig
