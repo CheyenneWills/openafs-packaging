@@ -1,7 +1,7 @@
 # Openafs Spec
 
-%define afsvers 1.8.14
-%define pkgvers 1.8.14
+%define afsvers 1.8.15
+%define pkgvers 1.8.15
 # for beta/rc releases make pkgrel 0.<tag>
 # for real releases make pkgrel 1 (or more for extra releases)
 %define pkgrel 1
@@ -1336,6 +1336,8 @@ dkms remove -m %{name} -v %{dkms_version} --rpm_safe_upgrade --all ||:
 %{_bindir}/afs_compile_et
 %{_bindir}/rxgen
 %{_includedir}/afs
+%{_includedir}/afs/afs_lock.h
+# Note lock.h is a compat header, and should be removed when possible.
 %{_includedir}/lock.h
 %{_includedir}/lwp.h
 %{_includedir}/rx
