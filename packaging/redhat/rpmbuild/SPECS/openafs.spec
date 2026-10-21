@@ -1,7 +1,7 @@
 # Openafs Spec
 
-%define afsvers 1.8.16
-%define pkgvers 1.8.16
+%define afsvers 1.8.16.1
+%define pkgvers 1.8.16.1
 # for beta/rc releases make pkgrel 0.<tag>
 # for real releases make pkgrel 1 (or more for extra releases)
 %define pkgrel 1
@@ -1487,6 +1487,9 @@ dkms remove -m %{name} -v %{dkms_version} --rpm_safe_upgrade --all ||:
 ###
 ##############################################################################
 %changelog
+* Tue Jun 30 2026  Cheyenne Wills <cwills@sinenomine.net
+- OpenAFS 1.8.16.1
+
 * Fri May 15 2026  Cheyenne Wills <cwills@sinenomine.net>
 - OpenAFS 1.8.16
 

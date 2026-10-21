@@ -1,3 +1,164 @@
+commit 963e385041f30003063d44674d4c082dd073ae91
+Author: Michael Meffie <mmeffie@sinenomine.net>
+Date:   Thu Jun 11 20:38:20 2026 -0400
+
+    Make OpenAFS 1.8.16.1
+    
+    Update version strings for the 1.8.16.1 release.
+    
+    Change-Id: I747db606edf469f585ea3ccdcbf7319875ab47e5
+    Reviewed-on: https://gerrit.openafs.org/16826
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+
+commit cd0caa4ead4d9dac02111099f05385d4cc57d78b
+Author: Michael Meffie <mmeffie@sinenomine.net>
+Date:   Thu Jun 11 20:29:35 2026 -0400
+
+    Update NEWS for OpenAFS 1.8.16.1
+    
+    Change-Id: Ie029a4fb5859e86f1b70553d1a82213a594870a5
+    Reviewed-on: https://gerrit.openafs.org/16825
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Tested-by: Cheyenne Wills <cwills@sinenomine.net>
+
+commit f9d5801747b78008ec3519db7cd52c2ea028df13
+Author: Michael Meffie <mmeffie@sinenomine.net>
+Date:   Mon Jun 8 15:06:26 2026 -0400
+
+    afs: Remove set but unused cnt in afs_GetDownDSlot()
+    
+    The `cnt` variable is incremented but never accessed in
+    afs_GetDownDSlot(). Remove the unused variable.
+    
+    This fixes a build warning on newer compilers, such as GCC 16.1.1.
+    
+        .../src/afs/afs_dcache.c: In function 'afs_GetDownDSlot':
+        .../src/afs/afs_dcache.c:1254:18: error: variable 'cnt' set but not used [-Werror=unused-but-set-variable=]
+        |     unsigned int cnt;
+        |                  ^~~
+    
+    This bug has been present since OpenAFS 1.0.
+    
+    Reviewed-on: https://gerrit.openafs.org/16820
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    (cherry picked from commit 12b794b77441c0489027da0ae5acaac8ef001e47)
+    
+    Change-Id: Idcecb912809b71b395b01bef21b96be797ebd234
+    Reviewed-on: https://gerrit.openafs.org/16824
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 43431578bc08a0b1eaff5e908a06023338623293
+Author: Cheyenne Wills <cwills@sinenomine.net>
+Date:   Fri May 29 09:10:52 2026 -0600
+
+    Linux: Add comment for d_alias configure test
+    
+    Add a comment to the configure test for the dentry->d_u_d.d_alias to
+    indicate that the dentry's d_alias member is accessed by just
+    dentry->d_alias again.
+    
+    The Linux commit 7.1:
+        'struct dentry: make ->d_u anonymous' (2420067cecacb)
+    made the d_u union member within the dentry anonymous and so it is
+    unnecessary to use dentry->d_u.d to access the d_alias member.
+    
+    Note, this commit only adds a comment, but Linux 7.1 has reverted the
+    way the d_alias member of the dentry structure is accessed.
+    
+       Prior to 2.6.16
+           dentry->d_alias
+       2.6.16 through 7.0
+           dentry->u_d.d_alias
+       7.1
+           dentry->d_alias
+    
+    An existing macro handles the differences on how to access d_alias
+    member, so no code changes are needed.
+    
+    Normally we try to ensure that the newly introduced Linux behavior
+    results in a successful autoconf test, so we don't depend on a test
+    failing (since a test may fail for a variety of unrelated reasons).
+    However, in this case, if the test fails unexpectedly we'll just use the
+    wrong dentry field, which produces a very mundane and recognizable
+    compiler error, so this is not risky.
+    
+    Reviewed-on: https://gerrit.openafs.org/16808
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    (cherry picked from commit fd157926f08d10afe981d85654395bbf083ea7a3)
+    
+    Change-Id: I94d0265a6f4e43dbf8ee11a5e885a7a8faec96db
+    Reviewed-on: https://gerrit.openafs.org/16823
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 7e4948c8ae8f87b5ea3b95f84f7f8bbebf461d20
+Author: Cheyenne Wills <cwills@sinenomine.net>
+Date:   Fri May 29 08:55:49 2026 -0600
+
+    Linux: pagevec.h renamed to folio_batch.h
+    
+    The Linux 7.1 commit:
+        'folio_batch: rename pagevec.h to folio_batch.h' (4e1d77a8f382a)
+    simply renamed the pagevec.h header file.
+    
+    Add a configure test for folio_batch.h and add a preprocessor
+    conditional to include folio_batch.h or pagevec.h as appropriate.
+    
+    Note:
+    The test for pagevec_init() can be skipped since the pagevec structure
+    and pagevec_init() are not present in folio_batch.h.  The structure
+    and function were removed in Linux 6.5 with the commit:
+        'mm: remove struct pagevec' (1e0877d58b1e2)
+    
+    The test for __pagevec_lru_add_file() can be skipped since the function
+    is not present in folio_batch.h.  The function was removed in Linux 3.11
+    with the commit:
+         'mm: remove lru parameter from __pagevec_lru_add and remove parts of pagevec API'
+         (a0b8cab3b9b2e)
+    
+    Reviewed-on: https://gerrit.openafs.org/16807
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Tested-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    (cherry picked from commit d47c438aec49e417066a7bef00bd82078014f5ea)
+    
+    Change-Id: I1c5ddbce525dbffe9c2f2fc069ed5ee0221929d8
+    Reviewed-on: https://gerrit.openafs.org/16822
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
 commit 84e6658efaf9b64292d1b386c51f91a75f792be1
 Author: Michael Meffie <mmeffie@sinenomine.net>
 Date:   Thu Apr 30 12:22:08 2026 -0400

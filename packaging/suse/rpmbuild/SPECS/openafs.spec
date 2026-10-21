@@ -78,8 +78,8 @@
 # leave upstream tar-balls untouched for integrity checks.
 
 # update with the version in the tar files (e.g. 1.8.8.1-8-gl18924 )
-%define upstream_version 1.8.16
-%define package_version 1.8.16
+%define upstream_version 1.8.16.1
+%define package_version 1.8.16.1
 %define release_version %{?release}%{!?release:1}
 
 Name:           openafs
@@ -1166,6 +1166,8 @@ dkms remove -m %{name} -v %{version} --rpm_safe_upgrade --all ||:
 #
 
 %changelog
+* Tue Jun 30 2026 Cheyenne Wills <cwills@sinenomine.net>
+- OpenAFS 1.8.16.1
 * Wed Jun 22 2022 Christof Hanke <christof.hanke@mpcdf.mpg.de>
 - apply patches adressing:
   * Linux-5.17 and 5.18, gcc-11 and 12: fix_gcc_12_linux_5.18.diff
