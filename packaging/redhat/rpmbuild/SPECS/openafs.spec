@@ -1,10 +1,10 @@
 # Openafs Spec
 
-%define afsvers 1.8.16.1
-%define pkgvers 1.8.16.1
+%define afsvers 1.8.17pre1
+%define pkgvers 1.8.17pre1
 # for beta/rc releases make pkgrel 0.<tag>
 # for real releases make pkgrel 1 (or more for extra releases)
-%define pkgrel 1
+%define pkgrel 0
 
 # Disable using lto (link time optimization)
 %global _lto_cflags %{nil}
@@ -1487,6 +1487,9 @@ dkms remove -m %{name} -v %{dkms_version} --rpm_safe_upgrade --all ||:
 ###
 ##############################################################################
 %changelog
+* Fri Oct 09 2026  Cheyenne Wills <cwills@sinenomine.net
+- OpenAFS 1.8.17pre1
+
 * Tue Jun 30 2026  Cheyenne Wills <cwills@sinenomine.net
 - OpenAFS 1.8.16.1
 

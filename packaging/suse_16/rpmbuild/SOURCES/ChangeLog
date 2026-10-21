@@ -1,3 +1,791 @@
+commit e93cc9adb2c223841b11358867f95c4729221e4e
+Author: Michael Meffie <mmeffie@sinenomine.net>
+Date:   Fri Sep 11 09:54:58 2026 -0400
+
+    Make OpenAFS 1.8.17pre1
+    
+    Update version strings for the 1.8.17pre1 release.
+    
+    Change-Id: If4dc36cc3142fa42c2846e89724806d79f6c648e
+    Reviewed-on: https://gerrit.openafs.org/16965
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit c45883b49afa844bc64523ba05c0d2f89b6b9d82
+Author: Michael Meffie <mmeffie@sinenomine.net>
+Date:   Thu Sep 10 14:56:21 2026 -0400
+
+    Update NEWS for OpenAFS 1.8.17pre1
+    
+    Change-Id: I0b48fb54e7d9b9cc9f3164ed6be350fd9a98df78
+    Reviewed-on: https://gerrit.openafs.org/16964
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+    Tested-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit b52839f04d91d79b5716c2690ba7f76de990453e
+Author: Andrew Deason <adeason@sinenomine.net>
+Date:   Tue May 19 15:45:49 2026 -0500
+
+    LINUX: Grab unixuser refs in osi_proc.c
+    
+    In order to implement the 'unixusers' /proc pseudo-file, osi_proc.c
+    contains code to iterate over unixusers. The uu_*() functions are
+    seq_operations callbacks that are called approximately like this
+    pseudocode:
+    
+        p = uu_start();
+        while (p != NULL) {
+            uu_show(p);
+            p = uu_next(p);
+        }
+        uu_stop(p);
+    
+    Since commit 89b22dfe86 (libafs: Implement unixuser RW locks) in OpenAFS
+    1.7.1, uu_show() drops the ref for the current unixuser 'tu' before
+    acquiring afs_xuser. If 'tu' is freed while we're waiting for afs_xuser,
+    we'll dereference freed memory when uu_next() examines tu->next to get
+    the next unixuser.
+    
+    Change osi_proc.c to grab and release unixuser refs while traversing
+    unixusers, like we did for other files in change I849132fc08 (afs:
+    Introduce and use afs_UserScan()).
+    
+    In uu_start(), this simply involves using afs_UserScan(), but in other
+    callers, grab the refs manually, since we iterate over unixusers one at
+    a time instead of directly via a for() loop.
+    
+    In uu_next(), also acquire AFS_GLOCK(), since we are now manipulating
+    tu->refCount for various users.
+    
+    FIXES 135623
+    
+    Reviewed-on: https://gerrit.openafs.org/16833
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+    (cherry picked from commit 6db6df90e3827f751a3507f73a22b838a741511f)
+    
+    Change-Id: I97397b25337231d2ec7afa5d2c17d4b441c5d396
+    Reviewed-on: https://gerrit.openafs.org/17008
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit f8469c5694f297b4361520144611f4c8c37fd99f
+Author: Andrew Deason <adeason@sinenomine.net>
+Date:   Tue May 19 15:37:13 2026 -0500
+
+    afs: Introduce and use afs_UserScan()
+    
+    Since before OpenAFS 1.0, PUnlog() drops and reacquires the afs_xuser
+    lock while looping through the unixuser list. It obtains a reference to
+    the current unixuser, but drops the reference before reacquiring
+    afs_xuser. If afs_GCUserData() runs while we are waiting for afs_xuser,
+    the current unixuser may have been freed. We then dereference tu->next
+    for the next iteration of the loop, possibly using freed memory.
+    
+    In addition, since commit dde2a200a3
+    (userland-cachemgr-zero-token-times-on-unlog-to-trigger-gc-20010605)
+    included in OpenAFS 1.1.0, we clear tu->tokenTime for UKERNEL
+    potentially after 'tu' has been freed.
+    
+    To fix both of these issues, grab and release a reference to the current
+    unixuser as the very first and last things we do for each iteration of
+    the loop. To make this easier to do consistently, introduce a new macro,
+    afs_UserScan(), to implement the for() loop, similar to using
+    opr_queue_Scan() to iterate over a queue.
+    
+    Convert all unixuser-iterating code to use afs_UserScan(), except for
+    two exceptions:
+    
+    - This commit does not convert the code in LINUX/osi_proc.c; that will
+      be handled in a separate commit, since structure of code in there
+      looks very different.
+    
+    - This commit does not convert code in afs_user.c itself to use
+      afs_UserScan(), since some of those functions involve more complex
+      loops or need special handling for unixuser refcounts. This commit
+      treats afs_UserScan() as an interface that code outside of afs_user.c
+      should use, and afs_user.c itself is allowed to do its own scanning
+      logic manually.
+    
+    Besides those two exceptions, this commit updates all unixuser-iterating
+    code to use afs_UserScan(). Many converted for() loops don't have the
+    same problem as PUnlog() since they don't drop/acquire locks during the
+    loop; convert them anyway just in case, and to keep the code paths more
+    consistent.
+    
+    FIXES 135623
+    
+    Reviewed-on: https://gerrit.openafs.org/16832
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+    (cherry picked from commit 52647e10a2e4e47ef4b4ce3a92e86316efe01afc)
+    
+    Change-Id: I5af08a31708ce5b99f65a16d6b2caad9f19ca715
+    Reviewed-on: https://gerrit.openafs.org/17007
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 4680045b6149cf1d71d529c9be05d29a75a47009
+Author: Andrew Deason <adeason@sinenomine.net>
+Date:   Tue Sep 15 14:47:50 2026 -0500
+
+    WINNT: Remove strcpy() in ktc_ForgetTokensByCell()
+    
+    Since OpenAFS 1.0, ktc_ForgetTokensByCell() (then ktc_ForgetToken()) has
+    strcpy()d the cell from the provided arguments into the stack-local
+    "tbuffer" before passing the cell to the VIOCDELTOK pioctl.
+    
+    There's no reason to use an intermediate stack buffer; just pass the
+    given string pointer directly to the pioctl, so we don't risk
+    overrunning the "tbuffer" with an unsafe strcpy() call.
+    
+    Reviewed-on: https://gerrit.openafs.org/16976
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+    (cherry picked from commit 151ed20e14eb0a22140190c2ad0c4548c6927a5d)
+    
+    Change-Id: I10ae0ad24d19e1f8c7c3043de199878e02fee630
+    Reviewed-on: https://gerrit.openafs.org/17006
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit f74beebfeb318ac7ba48d44528b13dcd19dc17b2
+Author: Andrew Deason <adeason@sinenomine.net>
+Date:   Fri Sep 4 13:58:15 2026 -0500
+
+    WINNT: Implement ktc_ForgetTokensByCell()
+    
+    Commit ab9bc6c57a (log: Add ktc_ForgetTokensByCell()) added the new
+    ktc_ForgetTokensByCell() function to ktc.c and relevant libtool symbol
+    files, but did not implement the function in ktc_nt.c for WINNT.
+    
+    To allow the function to exist and be usable on WINNT, implement
+    ktc_ForgetTokensByCell() in ktc_nt.c, using existing logic from
+    ktc_ForgetToken(). Also change ktc_ForgetToken() to be implemented in
+    terms of ktc_ForgetTokensByCell().
+    
+    Add ktc_ForgetTokensByCell() to afsauthent.def, so it's usable via
+    libafsauthent on WINNT. Also add ktc_ForgetTokensByCell() to
+    afsauthent.exp, to make sure it's usable on all platforms (although
+    afsauthent.exp is possibly unused at this point and will be removed in
+    future commits).
+    
+    Reviewed-on: https://gerrit.openafs.org/16958
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Gaurav Saxena <gsaxena@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+    (cherry picked from commit e14f3b607dee98fccb408079c93668650f46127d)
+    
+    Change-Id: I9b0539e9ebaf818c5784181e2525758aa7e65e1c
+    Reviewed-on: https://gerrit.openafs.org/16988
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit d2d7287ec6abcc8c48157901832b4bf87c42102d
+Author: Michael Meffie <mmeffie@sinenomine.net>
+Date:   Tue Jan 28 18:50:24 2025 +0100
+
+    DARWIN: ANSIfy functions
+    
+    Convert the remaining K&R style function declarations to ANSI in the
+    DARWIN source and and clean up nearby whitespace errors.
+    
+    [1.8: This fixes build errors on macOS 27 Golden Gate and Xcode
+      beta 5, such as:
+      /Users/devlab/src/openafs/src/afs/DARWIN/osi_inode.c:31:10: error: unknown type name 'fs'
+       31 | getinode(fs, dev, inode, vpp, perror)
+          |          ^
+      /Users/devlab/src/openafs/src/afs/DARWIN/osi_inode.c:31:14: error: unknown type name 'dev'
+       31 | getinode(fs, dev, inode, vpp, perror)
+          |              ^
+      /Users/devlab/src/openafs/src/afs/DARWIN/osi_inode.c:31:19: error: unknown type name 'inode'
+       31 | getinode(fs, dev, inode, vpp, perror)
+          |                   ^
+      /Users/devlab/src/openafs/src/afs/DARWIN/osi_inode.c:31:26: error: unknown type name 'vpp'
+       31 | getinode(fs, dev, inode, vpp, perror)
+          |                          ^
+      /Users/devlab/src/openafs/src/afs/DARWIN/osi_inode.c:31:31: error: unknown type name 'perror'
+       31 | getinode(fs, dev, inode, vpp, perror)
+          |                               ^
+      /Users/devlab/src/openafs/src/afs/DARWIN/osi_inode.c:31:38: error: expected ';' after top level declarator
+       31 | getinode(fs, dev, inode, vpp, perror)
+          |                                      ^
+          |                                      ;
+    ]
+    
+    Reviewed-on: https://gerrit.openafs.org/16152
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    (cherry picked from commit 2da2d6d09556585246c6190ac6365ebd0386174c)
+    
+    Change-Id: Iaf748be665553c03daf984aa195a67e656c2fd9a
+    Reviewed-on: https://gerrit.openafs.org/16955
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Ganesh G. Chaudhari <gangovind@in.ibm.com>
+    Tested-by: Ganesh G. Chaudhari <gangovind@in.ibm.com>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+    Reviewed-by: Kailas Zadbuke <kailashsz@in.ibm.com>
+
+commit 364003e22d16d1171d6f1068ba84afe1b83810de
+Author: Mark Vitale <mvitale@sinenomine.net>
+Date:   Mon Aug 17 17:24:07 2026 -0400
+
+    DARWIN: Eliminate "incompatible function pointer" build error
+    
+    When building OpenAFS under macos 27 beta (Golden Gate) with
+    Xcode 27 beta 5, the following build error occurs:
+    
+    /Users/devlab/src/openafs/src/afs/DARWIN/osi_file.c:202:17: error:
+            incompatible function pointer types assigning to
+          'int (*)(struct osi_file *, afs_int32)' (aka 'int (*)(struct osi_file *, int)')
+            from
+          'int (*)(void)' [-Wincompatible-function-pointer-types]
+    
+      202 |     afile->proc = (int (*)())0;
+          |                 ^ ~~~~~~~~~~~~
+    
+    Change the assignment to a simple NULL.
+    
+    Reviewed-on: https://gerrit.openafs.org/16948
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    (cherry picked from commit 2f8b7da15ff15d7def18af4feff7950ecab3e9cc)
+    
+    Change-Id: I42ffc679acff8ec4bad25efdfb6b7629ba49a617
+    Reviewed-on: https://gerrit.openafs.org/16954
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Ganesh G. Chaudhari <gangovind@in.ibm.com>
+    Tested-by: Ganesh G. Chaudhari <gangovind@in.ibm.com>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+    Reviewed-by: Kailas Zadbuke <kailashsz@in.ibm.com>
+
+commit 5866be780c5fef276081b9a66ecd4e4e68388f5a
+Author: GANESH CHAUDHARI <gangovind@in.ibm.com>
+Date:   Wed Jul 15 15:35:58 2026 +0530
+
+    macos: Add support for macOS 27 (Golden Gate)
+    
+    Added the required configuration changes and new files
+    to enable building and packaging OpenAFS on macOS 27
+    (Golden Gate).
+    
+    MacOS Tahoe used Darwin kernel version 25.x, which
+    corresponds to the Darwin version suffix 250 in the
+    configuration files. MacOS Golden Gate beta showcase
+    Darwin kernel version 27.x (skips 26.x), so the corresponding
+    configuration suffix is 270.
+    
+    As a result, there is no Darwin 260 configuration. This version
+    numbering change is driven by Apple's kernel versioning and we
+    expect no impact on OpenAFS functionality.
+    
+    Since macOS 27 no longer supports Intel-based Macs, no
+    x86-specific configuration changes are introduced.
+    
+    Reviewed-on: https://gerrit.openafs.org/16883
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    (cherry picked from commit e78d6fb06ed85ed591b8d76ed8589a8753b261b3)
+    
+    Change-Id: I2d21a00415e30ab69853494139963f418f041866
+    Reviewed-on: https://gerrit.openafs.org/16953
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Ganesh G. Chaudhari <gangovind@in.ibm.com>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 9a8b359c3ee4dd813279650f6018a38e01acec89
+Author: Andrew Deason <adeason@sinenomine.net>
+Date:   Thu Jun 2 12:22:06 2022 -0500
+
+    rx: Check rxi_AddRpcStat currentFunc bounds
+    
+    Our rxgen-generated server and client RPC stubs contain some code for
+    recording call statistics that looks like this (for BOZO_GetStatus,
+    for example; the 4th function in the BOZO_ package):
+    
+        if (rx_enable_stats) {
+            rx_RecordCallStatistics(z_call, BOZO_STATINDEX, 3,
+                                    BOZO_NO_OF_STAT_FUNCS, 0);
+        }
+    
+    This eventually calls rxi_AddRpcStat with similar arguments. If a stat
+    struct doesn't exist for the given package (BOZO_STATINDEX),
+    rxi_AddRpcStat allocates a new struct rx_interface_stat, which can
+    accomodate up to 'totalFunc' different functions
+    (BOZO_NO_OF_STAT_FUNCS in the above example). If a struct already
+    exists for the given package, we'll use the existing struct.
+    
+    When we update the stats for the current call, we update
+    'rpc_stat->stats[currentFunc]' (were 'currentFunc' is 3 in the above
+    example). We assume rpc_stats->stats has enough entries allocated for
+    this to be okay, but we never actually check. We just assume that
+    'currentFunc' is always less than 'totalFunc', and we assume that the
+    caller always provides the same 'totalFunc' for that package.
+    
+    Normally this is true, but this is not checked or verified anywhere.
+    If two packages accidentally use the same statindex, this may not
+    always be true. For example, say someone defines a new service under
+    package FOO_, with 2 functions, and specifies 'statindex 1' in the .xg
+    file. This means that FOO_STATINDEX will be 1, and
+    FOO_NO_OF_STAT_FUNCS will be 2. If someone calls one of the FOO_ RPCs,
+    rxi_AddRpcStat will allocate a struct that can accommodate stats for 2
+    functions.
+    
+    Later on, say that someone calls a BOZO_ RPC. rxi_AddRpcStat will look
+    for a struct for BOZO_STATINDEX (which is also 1), and it finds one,
+    since we just created one for the FOO_ call before (since
+    FOO_STATINDEX is also 1). If the BOZO_ RPC is BOZO_GetStatus,
+    'currentFunc' will be 3, which means 'rpc_stat->stats[currentFunc]'
+    will go beyond the end of the array allocated for rpc_stat->stats,
+    since space has only been allocated for 2 functions. This will
+    silently corrupt whatever memory follows the original allocation for
+    'rpc_stats', every time someone calls BOZO_GetStatus (or any other
+    BOZO_ RPC beyond the first 2 RPCs).
+    
+    If someone calls BOZO_CreateBnode instead, this won't corrupt memory,
+    since the 'currentFunc' given is 0, which will fit into the allocated
+    'rpc_stat->stats' array. But the stats will be meaningless, since it
+    will contain data for a FOO_ function and some other unrelated BOZO_
+    function.
+    
+    This never happens in the current tree, and should never happen
+    normally since different services shouldn't use the same statindex.
+    But it can happen by accident, even if no 'statindex' is defined
+    (without a defined statindex, the default value is derived from the
+    service ID and port; someone could define different services on the
+    same port/service). And if it does happen, it can silently corrupt
+    memory.
+    
+    So, to make sure this doesn't corrupt memory by mistake, check that
+    'currentFunc' actually fits in the 'rpc_stats->stats' array before
+    updating the stats. If it doesn't, just don't update the stats. We
+    could assert instead, since this situation should never happen, but
+    failing to update our stats is a rather minor side effect, and so
+    asserting doesn't seem worth it (especially if we're running in the
+    kernel).
+    
+    Also ignore the stats if the given 'totalFunc' doesn't match what's in
+    an existing stats struct. This avoids the case with the
+    BOZO_CreateBnode example mentioned above, where there is no memory
+    corruption, but the resulting stats are meaningless.
+    
+    Reviewed-on: https://gerrit.openafs.org/15026
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    (cherry picked from commit 34a46993434d046a8831c513c84cf1024ef1de16)
+    
+    Change-Id: I65879b47b70d2d29f1f84fa9a322e6eb06f04468
+    Reviewed-on: https://gerrit.openafs.org/16229
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Kailas Zadbuke <kailashsz@in.ibm.com>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit dd1dc35068587ac88bc24199a35878d83fa4113c
+Author: Cheyenne Wills <cwills@sinenomine.net>
+Date:   Tue Jul 7 15:53:16 2026 -0600
+
+    linux: replace strncpy with strscpy
+    
+    The Linux 7.2 commit:
+        'string: Remove strncpy() from the kernel' (079a028d6327e)
+    removed the strncpy() function.
+    
+    As a replacement, we can use the strscpy() function that was introduced
+    by the Linux 4.3 commit:
+        'string: provide strscpy()' (30035e45753b7)
+    
+    strncpy() is only used on LINUX in the macro osi_procname(), and
+    osi_procname() is only used to log the process name with afs_warn().
+    We don't need the NUL-padding behavior or the return value of strncpy(),
+    so using strscpy() as a drop-in replacement for strncpy() is fine.
+    
+    Add a configure test to verify that strscpy is available in the Linux
+    kernel headers and update the 'osi_procname' macro to use strscpy()
+    instead of strncpy() when it is available.
+    
+    Note, since strscpy() was introduced in Linux 4.3, this commit is
+    retroactive.
+    
+    Reviewed-on: https://gerrit.openafs.org/16872
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    (cherry picked from commit c4387834c5e5a33847c68be9564a5d5535523cf8)
+    
+    Change-Id: I544cc248e2a248d1d3d6ebd167266e9ef680aa6a
+    Reviewed-on: https://gerrit.openafs.org/16928
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit de32db0b657cf95ab65d5ae5b5ac639eb3caa7ab
+Author: Andrew Deason <adeason@sinenomine.net>
+Date:   Thu Dec 1 22:55:41 2022 -0600
+
+    LINUX: Disable osi_dnlc
+    
+    The DNLC ("directory name lookup cache") is our cross-platform way of
+    caching lookups of directory items, so we can sometimes avoid hitting
+    the (disk) cache when running afs_lookup().
+    
+    The Linux kernel has its own (much more sophisticated) directory name
+    caching layer: the dcache, represented by 'struct dentry's (unrelated
+    to our data cache / 'struct dcache'). Maintaining our own cache is
+    rather pointless, and just adds overhead and creates more
+    possibilities to make mistakes (as can be seen by the number of
+    special cases in afs_lookup() to avoid the DNLC).
+    
+    So, just disable the DNLC on LINUX by default by setting the existing
+    afs_usednlc global to 0. At least for now, still build the DNLC code to
+    avoid bitrot if we want to turn it back on. Add a sysctl for afs_usednlc
+    so developers can turn it back on for benchmarking or other testing.
+    Declare afs_usednlc in afs_prototypes.h next to the other osi_dnlc
+    routines.
+    
+    Reviewed-on: https://gerrit.openafs.org/15213
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    (cherry picked from commit b7f4d36241e143a855ead90bd133cc0664fb9ff6)
+    
+    Change-Id: I22277d71baac7862a3dedce091c9ad4d98b33183
+    Reviewed-on: https://gerrit.openafs.org/16927
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit e5e639568946a10ca256a645417c3f9c69b095dd
+Author: Koustubh Mattikalli <koustubh.mattikalli@ibm.com>
+Date:   Sun May 24 08:54:00 2026 +0530
+
+    log: Optimize token unlogging by cell name
+    
+    Use new API function ktc_ForgetTokensByCell() introduced in Change-Id
+    "Ia3f3767adeb52ee357b19aec337870d99cb2e33b".
+    This function allows forgetting tokens for a specific cell without
+    affecting tokens for other cells.
+    
+    This simplifies the unlog implementation by eliminating the need of
+    listing all tokens, forget them all, and then re-register all except
+    those specified by the -cell option. However, the old implementation of
+    forgetting and re-registering tokens is still run if the kernel does
+    not support the ktc_ForgetTokensByCell() operation. The old code path
+    will be removed later in a future commit.
+    
+    This change reduces code complexity and improves performance by
+    avoiding unnecessary token listing and re-registration operations.
+    
+    Co-authored-by: Kailas S Zadbuke <kailashsz@in.ibm.com>
+    Co-authored-by: Amar Bhandari <amar.bhandari@ibm.com>
+    Reviewed-on: https://gerrit.openafs.org/16802
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    (cherry picked from commit 98e433d736437a36e66a765d12b4968d0b5c9e60)
+    
+    Change-Id: Ib0bf2bdcb52db08f343d65398311d4d40a02bf9f
+    Reviewed-on: https://gerrit.openafs.org/16898
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Kailas Zadbuke <kailashsz@in.ibm.com>
+    Reviewed-by: Koustubh  Mattikalli <koustubh.mattikalli@ibm.com>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 581d5f4bc3f36ab7471950f1cda36a40e2186eda
+Author: Koustubh Mattikalli <koustubh.mattikalli@ibm.com>
+Date:   Tue Aug 25 14:48:29 2026 -0600
+
+    log: Add ktc_ForgetTokensByCell()
+    
+    In I23ee8bde66e1e743febe22ae7e4ec822ff2ae7e0 commit (afs: Add new
+    pioctl PUnlogCell), new pioctl call has been introduced which provide a
+    mechanism to remove tokens for a specific cell.
+    
+    To use this new pioctl call, introduce new functions
+    ktc_ForgetTokensByCell() and ForgetTokensByCell() that allows forgetting
+    tokens for a specific cell without affecting tokens of other cells.
+    
+    Co-authored-by: Kailas S Zadbuke <kailashsz@in.ibm.com>
+    Co-authored-by: Amar Bhandari <amar.bhandari@ibm.com>
+    Reviewed-on: https://gerrit.openafs.org/16621
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    (cherry picked from commit ab9bc6c57af509488efa4dd28bfb4be67f57924c)
+    
+     Conflicts:
+            src/auth/liboafs_auth_krb.la.sym  - N/A for 1.8.x
+    
+    Change-Id: If180bb0d404c0a26293934f1a9c16199067f27ac
+    Reviewed-on: https://gerrit.openafs.org/16897
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit f780844bf86d4ce1a1b08e6b5f7101444d33625e
+Author: Koustubh Mattikalli <koustubh.mattikalli@ibm.com>
+Date:   Fri Aug 29 16:37:49 2025 +0530
+
+    log: Keep rxgk tokens for unlog -cell
+    
+    The current implementation of unlog removes all rxgk tokens
+    regardless of the "-cell" option provided, leading to unintended
+    token deletions. This happens because "unlog -cell" currently works by
+    discarding all tokens and then re-adding all tokens that don't match the
+    given -cell. But it is using the old ktc_GetToken() interface, which
+    only works for rxkad tokens, so any non-rxkad tokens (including rxgk
+    tokens) get discarded, regardless of cell.
+    
+    To fix this, replace calls to ktc_ListTokens(), ktc_GetToken(), and
+    ktc_SetToken() with their newer counterparts ktc_ListTokensEx(),
+    ktc_GetTokenEx(), and ktc_SetTokenEx(), which work with all tokens.
+    Change struct tokenInfo to use a struct ktc_setTokenData for use with
+    these new functions, instead of the old struct ktc_token/ktc_principal
+    fields.
+    
+    Also change unlog_CheckUnlogList() to take a cell name directly, instead
+    of a ktc_principal, since we no longer have a struct ktc_principal to
+    give it.
+    
+    Co-authored-by: Kailas Zadbuke <kailashsz@in.ibm.com>
+    Co-authored-by: Amar Bhandari <amar.bhandari@ibm.com>
+    Reviewed-on: https://gerrit.openafs.org/16531
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    (cherry picked from commit d3087641058a8fe982a7280401f07f7c2ce72499)
+    
+    Change-Id: I4d30e3deaacaf9736b2d694a80d993df89a437fa
+    Reviewed-on: https://gerrit.openafs.org/16896
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Koustubh  Mattikalli <koustubh.mattikalli@ibm.com>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 8f4a1b03dfbdc663e0537adf11bf5c3e1cee2a87
+Author: Kailas S Zadbuke <kailashsz@in.ibm.com>
+Date:   Thu Nov 13 12:50:29 2025 +0530
+
+    afs: Add new pioctl PUnlogCell
+    
+    The current implementation of PUnlog removes all tokens and it does not
+    provide a mechanism to remove tokens for a specific cell. In a multi-cell
+    environment, this behavior is inefficient because it removes tokens for
+    all cells, even when only a single cell’s tokens need to be invalidated.
+    
+    To address this limitation, introduce a new pioctl, PUnlogCell
+    (pioctl code O.3), which removes tokens only for the specified cell.
+    This avoids unintended token removal for other cells and eliminates the
+    need for additional pioctl calls to re-acquire tokens that are
+    unnecessarily revoked by PUnlog.
+    
+    Co-authored-by: Koustubh Mattikalli <koustubh.mattikalli@ibm.com>
+    Co-authored-by: Amar Bhandari <amar.bhandari@ibm.com>
+    Reviewed-on: https://gerrit.openafs.org/16620
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    (cherry picked from commit e9de8ffd492dcf03a268596bdef56e41552230ff)
+    
+    Change-Id: I1a4da9abbd8a0b260c636a07eed9de8e864d3081
+    Reviewed-on: https://gerrit.openafs.org/16910
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 3ec6d84001cc5769cea0fb31298599bc064d5520
+Author: Jeffrey Altman <jaltman@auristor.com>
+Date:   Thu Oct 5 13:38:56 2023 -0400
+
+    config: move VIOC_SETBYPASS_THRESH define to vioc.h
+    
+    9d63160cccf88d554e47e4bed8e3bbe26f14f8c2 ("bypasscache-20080922")
+    allocated the _OVICEIOCTL(2) code point and added the definition to
+    venus.h instead of src/config/vioc.h.
+    
+    Reviewed-on: https://gerrit.openafs.org/15588
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    (cherry picked from commit 20272f0cddb3b3bce84305f914796b5e9dbc774d)
+    
+    Change-Id: I8de86ba58d9caf06841bf935d99ef3a76ac269c9
+    Reviewed-on: https://gerrit.openafs.org/16909
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit fdc55ca791e8da97fd0098428cd57120bf0a4c24
+Author: Jeffrey Altman <jaltman@auristor.com>
+Date:   Sun Sep 24 21:48:36 2023 -0400
+
+    config: remove VIOC_STATISTICS _VICEIOCTL(68)
+    
+    Added to OpenAFS declarations by 405cd3e8e0b8f72244fda6cbdb1a9ba9b9ad150c
+    ("add-new-arla-pioctl-20010710") but the assignment made by the
+    registrar was
+    
+      Group  Code  Name                       Purpose / Usage
+      =====  ====  =========================  ============================
+        A       1  AIOC_STATISTICS            arla: fetch statistics
+    
+    as it is an Arla specific pioctl.
+    
+    This change removes the unused declaration from OpenAFS src/config/vioc.h.
+    
+    Reviewed-on: https://gerrit.openafs.org/15583
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    (cherry picked from commit 882de5b105472af2e1798083c5ef1779abc296dc)
+    
+    Change-Id: Ie5225e552d0e1a084c90c0c0fa3e594e395f6e82
+    Reviewed-on: https://gerrit.openafs.org/16918
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 11467ce5efbc9c028173373fd76c69d144228a95
+Author: Jeffrey Altman <jaltman@auristor.com>
+Date:   Sun Sep 24 17:35:43 2023 -0400
+
+    config: Document ioctl/pioctl namespace management
+    
+    The ioctl and pioctl namespaces are separated into multiple
+    code groups with distinct management rules for each code group.
+    This commit documents the code groups used by OpenAFS.
+    New OpenAFS ioctl and pioctl codes should be introduced into
+    the 'O' (OpenAFS) code group unless the ioctl or pioctl is
+    being coordinated with another implementation.
+    
+    Link: https://registrar.central.org/pioctls.txt
+    Reviewed-on: https://gerrit.openafs.org/15581
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    (cherry picked from commit 7c22b918835e4d2b24546048df921f61e4454f4a)
+    
+    Change-Id: I4b39f38bce10e49ee663bd7ec6e89c7f2a0b761f
+    Reviewed-on: https://gerrit.openafs.org/16907
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit aab796d55f2ee1b3b02746a09e29580aff2c30d8
+Author: Marcio Barbosa <mbarbosa@sinenomine.net>
+Date:   Mon Aug 31 19:56:56 2020 +0000
+
+    Revert "vos: take RO volume offline during convertROtoRW"
+    
+    This reverts commit 32d35db64061e4102281c235cf693341f9de9271. While that
+    commit did fix the mentioned problem, depending on "vos" to set the
+    volume to be converted as "out of service" is not ideal. Instead, this
+    volume should be set as offline by the SAFSVolConvertROtoRWvolume RPC,
+    executed on the volume server.
+    
+    The proper fix for this problem will be introduced by another commit.
+    
+    Reviewed-on: https://gerrit.openafs.org/14339
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+    (cherry picked from commit 85893ac3df0c2cb48776cf1203ec200507b6ce7d)
+    
+    [cwills@sinenomine.net]
+    
+    For 1.8.x, this  commit reverts the commit:
+        9d217903f0c7f6b260f166fad6dbf77c67df7c2d (gerrit 15233)
+    
+    Note The pullup to 1.8.x (15233) and this revert are duplicates of an
+    earlier pullup and revert (gerrits 14310/14361).
+    
+    Change-Id: I48f83a0f43b61b5195929bf33e737615f30fae20
+    Reviewed-on: https://gerrit.openafs.org/16895
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+
 commit 963e385041f30003063d44674d4c082dd073ae91
 Author: Michael Meffie <mmeffie@sinenomine.net>
 Date:   Thu Jun 11 20:38:20 2026 -0400
