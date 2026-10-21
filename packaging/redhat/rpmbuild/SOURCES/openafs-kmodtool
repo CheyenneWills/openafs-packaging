@@ -50,6 +50,7 @@ get_verrel ()
     *.fc[1-9][0-9]*)
                    verrel="`echo ${verrel} | sed -e 's/^\(.*.fc[1-9][0-9][^\.]*\)\.[^\.]\+.\?$/\1/'`" ;;
     *.fc9*)        verrel="`echo ${verrel} | sed -e 's/^\(.*.fc9[^\.]*\)\.[^\.]\+.\?$/\1/'`" ;;
+    *.amzn*)       verrel="`echo ${verrel} | sed -e 's/^\(.*.amzn[0-9]*\)\.[^\.]\+.\?$/\1/'`" ;;
   esac
 }
 
@@ -79,11 +80,17 @@ get_rpmtemplate ()
     local variant="${1}"
     local dashvariant="${variant:+-${variant}}"
     case "$verrel" in
+        *.amzn2023*)  kernel_epoch="1:" ;;
+        *)            kernel_epoch="" ;;
+    esac
+    case "$verrel" in
         *.el[6-9]*)
 	       kdep="kernel-%{_target_cpu} = ${verrel}${variant}"     ;;
         *.el[1-9][0-9]*)
 	       kdep="kernel-%{_target_cpu} = ${verrel}${variant}"     ;;
         *.EL*) kdep="kernel${dashvariant}-%{_target_cpu} = ${verrel}" ;;
+        *.amzn*)
+	       kdep="kernel-%{_target_cpu} = ${kernel_epoch}${verrel}"  ;;
         *)     kdep="kernel-%{_target_cpu} = ${verrel}${variant}"     ;;
     esac
     case "$verrel" in
@@ -96,17 +103,16 @@ get_rpmtemplate ()
         *.fc1[0-9]*)
 	          kname="${verrel}.%{_target_cpu}${variant:+.${variant}}" ;;
         *.fc9*)   kname="${verrel}.%{_target_cpu}${variant:+.${variant}}" ;;
+        *.amzn*)  kname="${verrel}.%{_target_cpu}" ;;
         *)        kname="${verrel}${variant}"                             ;;
     esac
 
     cat <<EOF
 
-%global _find_debuginfo_opts %{?_find_debuginfo_opts} -p '.*openafs\.ko.*' -o kmod-debuginfo.list
-
 %package       -n kmod-${kmod_name}${dashvariant}
 Summary:          ${kmod_name} kernel module(s)
 Group:            System Environment/Kernel
-Provides:         kernel-modules = ${kname}
+Provides:         kernel-modules = ${kernel_epoch}${kname}
 Provides:         ${kmod_name}-kmod = %{?epoch:%{epoch}:}%{version}-%{release}
 Provides:         openafs-kernel = %{version}
 Requires:         ${kdep}
@@ -114,13 +120,25 @@ Requires:         ${kmod_name}-kmod-common >= %{?epoch:%{epoch}:}%{version}
 Requires(post):   ${depmod}
 Requires(postun): ${depmod}
 Release:          %{pkgrel}.%(echo ${verrel} | tr - _)
-BuildRequires:    kernel${dashvariant}-devel-%{_target_cpu} = ${verrel}
-%if 0%{?rhel} >= 8
+BuildRequires:    kernel${dashvariant}-devel-%{_target_cpu} = ${kernel_epoch}${verrel}
+%if 0%{?rhel} >= 8 || 0%{?amzn} >= 2023
 BuildRequires: elfutils-devel
 %endif
 %description   -n kmod-${kmod_name}${dashvariant}
 This package provides the ${kmod_name} kernel modules built for the Linux
 kernel ${kname} for the %{_target_cpu} family of processors.
+
+%post          -n kmod-${kmod_name}${dashvariant}
+${depmod} -aeF /boot/System.map-${kname} ${kname} > /dev/null || :
+%postun        -n kmod-${kmod_name}${dashvariant}
+${depmod} -aF /boot/System.map-${kname} ${kname} &> /dev/null || :
+%files         -n kmod-${kmod_name}${dashvariant}
+%defattr(644,root,root,755)
+/lib/modules/${kname}/extra/${kmod_name}/
+
+
+%if ! ( 0%{?fedora} >= 28 || 0%{?rhel} >= 8 || 0%{?amzn} >= 2023 )
+%global _find_debuginfo_opts %{?_find_debuginfo_opts} -p '.*openafs\.ko.*' -o kmod-debuginfo.list
 
 %package       -n kmod-%{kmod_name}${dashvariant}-debuginfo
 Summary:          Debug information for %{kmod_name} kernel modules
@@ -131,16 +149,9 @@ AutoReqProv:      no
 This package provides debug information for the %{kmod_name} kernel modules
 built for the Linux kernel ${kname} for the %{_target_cpu} family of processors.
 
-%post          -n kmod-${kmod_name}${dashvariant}
-${depmod} -aeF /boot/System.map-${kname} ${kname} > /dev/null || :
-%postun        -n kmod-${kmod_name}${dashvariant}
-${depmod} -aF /boot/System.map-${kname} ${kname} &> /dev/null || :
-%files         -n kmod-${kmod_name}${dashvariant}
-%defattr(644,root,root,755)
-/lib/modules/${kname}/extra/${kmod_name}/
-
 %files -f kmod-debuginfo.list -n kmod-%{kmod_name}${dashvariant}-debuginfo
 %defattr(-,root,root)
+%endif
 
 EOF
 }

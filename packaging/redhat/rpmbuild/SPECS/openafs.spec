@@ -1,13 +1,24 @@
 # Openafs Spec
 
-%define afsvers 1.8.16pre1
-%define pkgvers 1.8.16pre1
+%define afsvers 1.8.16
+%define pkgvers 1.8.16
 # for beta/rc releases make pkgrel 0.<tag>
 # for real releases make pkgrel 1 (or more for extra releases)
 %define pkgrel 1
 
 # Disable using lto (link time optimization)
 %global _lto_cflags %{nil}
+
+#
+# Disable setting the source_date_epoch from the top entry of the changelog and
+# instead use the current system time by default.
+#
+# Note: Downstream packagers which use this reference spec are encouraged
+#       to set source_date_epoch_from_changelog to 1 and update the changelog
+#       on each release to set the source_date_epoch.
+#
+%define source_date_epoch_from_changelog 1
+%{!?source_date_epoch: %global source_date_epoch %(date +%%s)}
 
 %{!?build_dkmspkg: %define build_dkmspkg 1}
 
@@ -50,7 +61,7 @@
 #
 # Definitions
 #
-%if 0%{?fedora} >= 17 || 0%{?rhel} >= 7
+%if 0%{?fedora} >= 17 || 0%{?rhel} >= 7 || 0%{?amzn} >= 1
 %define depmod /usr/sbin/depmod
 %else
 %define depmod /sbin/depmod
@@ -98,10 +109,10 @@ Packager: %{packager}
 %endif
 Group: Networking/Filesystems
 BuildRequires: %{?kdepend:%{kdepend}, } pam-devel, ncurses-devel, make, flex, bison
-%if 0%{?fedora} >= 15 || 0%{?rhel} >= 7
+%if 0%{?fedora} >= 15 || 0%{?rhel} >= 7 || 0%{?amzn} >= 1
 BuildRequires: systemd-units
 %endif
-%if 0%{?fedora} >= 15 || 0%{?rhel} >= 6
+%if 0%{?fedora} >= 15 || 0%{?rhel} >= 6 || 0%{?amzn} >= 1
 BuildRequires: perl-devel, swig
 %endif
 BuildRequires: perl(ExtUtils::Embed)
@@ -110,7 +121,7 @@ BuildRequires: krb5-devel
 %endif
 %if %{build_modules}
 BuildRequires: kernel-devel
-%if 0%{?rhel} >= 8
+%if 0%{?rhel} >= 8 || 0%{?amzn} >= 2023
 BuildRequires: elfutils-devel
 %endif
 %endif
@@ -140,8 +151,10 @@ administrative management.
 This package provides common files shared across all the various
 OpenAFS packages but are not necessarily tied to a client or server.
 
-The OpenAFS SRPM can be rebuilt with the following options to control
-what gets built:
+The OpenAFS SRPM can be rebuilt with the following options:
+
+ --define "source_date_epoch 1712832000"  Specify the build timestamp. The default
+                                          is the current system time.
 
  --define "kernvers 3.19.3-100.fc20.i686" Specify the specific kernel version
                                   to build modules against. The default is
@@ -191,7 +204,7 @@ To a kernel module for your running kernel, just run:
 
 %package client
 Requires: binutils, openafs = %{version}
-%if 0%{?fedora} >= 15 || 0%{?rhel} >= 7
+%if 0%{?fedora} >= 15 || 0%{?rhel} >= 7 || 0%{?amzn} >= 1
 Requires: systemd-units
 Requires(post): systemd-units, systemd-sysv
 Requires(preun): systemd-units
@@ -217,7 +230,7 @@ AFS.
 Requires: openafs = %{version}
 Summary: OpenAFS Filesystem Server
 Group: Networking/Filesystems
-%if 0%{?fedora} >= 15 || 0%{?rhel} >= 7
+%if 0%{?fedora} >= 15 || 0%{?rhel} >= 7 || 0%{?amzn} >= 1
 Requires: systemd-units
 Requires(post): systemd-units, systemd-sysv
 Requires(preun): systemd-units
@@ -441,6 +454,9 @@ krb4 lookalike services.
 #
 ##############################################################################
 %build
+
+export SOURCE_DATE_EPOCH=%{source_date_epoch}
+
 case %{_arch} in
        x86_64)                         sysname=amd64_linux26        ;;
        alpha*)                         sysname=alpha_linux_26       ;;
@@ -606,7 +622,7 @@ export KRB5_CONFIG
 %if %{krb5support}
 	--with-krb5 \
 %endif
-%if 0%{?fedora} >= 15 || 0%{?rhel} >= 6
+%if 0%{?fedora} >= 15 || 0%{?rhel} >= 6 || 0%{?amzn} >= 1
     --with-swig \
 %else
     --without-swig \
@@ -688,6 +704,7 @@ done
 ##############################################################################
 %install
 
+export SOURCE_DATE_EPOCH=%{source_date_epoch}
 export DONT_GPRINTIFY=1 # Do not modify initscripts.
 
 [ $RPM_BUILD_ROOT != / ] && rm -rf $RPM_BUILD_ROOT
@@ -809,7 +826,7 @@ rm -f $RPM_BUILD_ROOT%{_mandir}/man1/tokens.krb.1
 rm -f $RPM_BUILD_ROOT%{_mandir}/man5/AuthLog.5
 rm -f $RPM_BUILD_ROOT%{_mandir}/man5/AuthLog.dir.5
 %endif
-%if !(0%{?fedora} >= 15 || 0%{?rhel} >= 6)
+%if !(0%{?fedora} >= 15 || 0%{?rhel} >= 6 || 0%{?amzn} >= 1)
 rm -f $RPM_BUILD_ROOT%{_mandir}/man3/AFS::ukernel.3
 %endif
 
@@ -818,7 +835,7 @@ rm -f $RPM_BUILD_ROOT%{_mandir}/man3/AFS::ukernel.3
 #-----------------------------------------------------------------------------
 mkdir -p $RPM_BUILD_ROOT/etc/sysconfig
 install -m 755 src/packaging/RedHat/openafs.sysconfig $RPM_BUILD_ROOT/etc/sysconfig/openafs
-%if 0%{?fedora} < 15 && 0%{?rhel} < 7
+%if 0%{?fedora} < 15 && 0%{?rhel} < 7 && 0%{?amzn} < 1
 mkdir -p $RPM_BUILD_ROOT%{initdir}
 install -m 755 src/packaging/RedHat/openafs-client.init $RPM_BUILD_ROOT%{initdir}/openafs-client
 install -m 755 src/packaging/RedHat/openafs-server.init $RPM_BUILD_ROOT%{initdir}/openafs-server
@@ -987,7 +1004,7 @@ if [ -e %{_prefix}/afsws ]; then
 fi
 
 %post client
-%if 0%{?fedora} < 15 && 0%{?rhel} < 7
+%if 0%{?fedora} < 15 && 0%{?rhel} < 7 && 0%{?amzn} < 1
 chkconfig --add openafs-client
 %else
 if [ $1 -eq 1 ] ; then
@@ -1014,7 +1031,7 @@ fi
 
 %post server
 #on an upgrade, don't enable if we were disabled
-%if 0%{?fedora} < 15 && 0%{?rhel} < 7
+%if 0%{?fedora} < 15 && 0%{?rhel} < 7 && 0%{?amzn} < 1
 if [ $1 = 1 ] ; then
   chkconfig --add openafs-server
 fi
@@ -1041,7 +1058,7 @@ if [ $1 = 0 ] ; then
 fi
 
 %preun client
-%if 0%{?fedora} < 15 && 0%{?rhel} < 7
+%if 0%{?fedora} < 15 && 0%{?rhel} < 7 && 0%{?amzn} < 1
 if [ $1 = 0 ] ; then
         %{initdir}/openafs-client stop
         chkconfig --del openafs-client
@@ -1055,7 +1072,7 @@ fi
 %endif
 
 %preun server
-%if 0%{?fedora} < 15 && 0%{?rhel} < 7
+%if 0%{?fedora} < 15 && 0%{?rhel} < 7 && 0%{?amzn} < 1
 if [ $1 = 0 ] ; then
         %{initdir}/openafs-server stop
         chkconfig --del openafs-server
@@ -1067,7 +1084,7 @@ if [ $1 -eq 0 ] ; then
 fi
 %endif
 
-%if 0%{?fedora} >= 15 || 0%{?rhel} >= 7
+%if 0%{?fedora} >= 15 || 0%{?rhel} >= 7 || 0%{?amzn} >= 1
 %postun client
 /bin/systemctl daemon-reload >/dev/null 2>&1 || :
 
@@ -1204,7 +1221,7 @@ dkms remove -m %{name} -v %{dkms_version} --rpm_safe_upgrade --all ||:
 %{_prefix}/vice/etc/C/afszcm.cat
 %{_libdir}/libuafs.a
 %{_libdir}/libuafs_pic.a
-%if 0%{?fedora} < 15 && 0%{?rhel} < 7
+%if 0%{?fedora} < 15 && 0%{?rhel} < 7 && 0%{?amzn} < 1
 %{initdir}/openafs-client
 %else
 %{_unitdir}/openafs-client.service
@@ -1252,7 +1269,7 @@ dkms remove -m %{name} -v %{dkms_version} --rpm_safe_upgrade --all ||:
 %{_sbindir}/vldb_check
 %{_sbindir}/vldb_convert
 %{_sbindir}/voldump
-%if 0%{?fedora} < 15 && 0%{?rhel} < 7
+%if 0%{?fedora} < 15 && 0%{?rhel} < 7 && 0%{?amzn} < 1
 %{initdir}/openafs-server
 %else
 %{_unitdir}/openafs-server.service
@@ -1360,7 +1377,7 @@ dkms remove -m %{name} -v %{dkms_version} --rpm_safe_upgrade --all ||:
 %{_libdir}/libubik.a
 %{_mandir}/man1/rxgen.1.gz
 %{_mandir}/man1/afs_compile_et.1.gz
-%if 0%{?fedora} >= 15 || 0%{?rhel} >= 6
+%if 0%{?fedora} >= 15 || 0%{?rhel} >= 6 || 0%{?amzn} >= 1
 %{_libdir}/perl/AFS/ukernel.pm
 %{_libdir}/perl/ukernel.so
 %{_mandir}/man3/AFS::ukernel.3.gz
@@ -1470,6 +1487,12 @@ dkms remove -m %{name} -v %{dkms_version} --rpm_safe_upgrade --all ||:
 ###
 ##############################################################################
 %changelog
+* Fri May 15 2026  Cheyenne Wills <cwills@sinenomine.net>
+- OpenAFS 1.8.16
+
+* Mon Apr 27 2026  Michael Meffie <mmeffie@sinenomine.net>
+- Added Amazon Linux support
+
 * Wed Dec 12 2007  Simon Wilkinson <simon@sxw.org.uk> 1.4.5
 - Make the RPM mockable
 

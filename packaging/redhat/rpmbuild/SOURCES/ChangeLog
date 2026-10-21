@@ -1,3 +1,219 @@
+commit 84e6658efaf9b64292d1b386c51f91a75f792be1
+Author: Michael Meffie <mmeffie@sinenomine.net>
+Date:   Thu Apr 30 12:22:08 2026 -0400
+
+    Make OpenAFS 1.8.16
+    
+    Update version strings for the 1.8.16 release.
+    
+    Change-Id: I41e1e0a3305ca85d859fa6b876008a0c3432f88d
+    Reviewed-on: https://gerrit.openafs.org/16786
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 083536eb89797be662229c0033f9a5b4f5089321
+Author: Michael Meffie <mmeffie@sinenomine.net>
+Date:   Thu Apr 30 12:19:42 2026 -0400
+
+    Update NEWS for OpenAFS 1.8.16
+    
+    Change-Id: I49e1f32d5d17fb5f86e08e86c1938065dd8c997a
+    Reviewed-on: https://gerrit.openafs.org/16785
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 8507608e3f07b0c0e76062a29ebae12740406d28
+Author: Michael Meffie <mmeffie@sinenomine.net>
+Date:   Wed Apr 15 16:49:50 2026 +0000
+
+    RedHat: Add packaging support for Amazon Linux
+    
+    Add support to build RPMs for the Amazon Linux distribution.
+    
+    The 'amzn' macro is set when building on Amazon Linux. The values at
+    this time can be '1', '2', or '2023', which indicate the major releases.
+    Update our platform conditionals in the spec file and the custom
+    openafs-kmodtool to support this macro.
+    
+    Amazon Linux 2023 added a "1:" epoch to the version of its kernel
+    packages, which isn't visible in the 'uname -r' output. For example:
+    
+        $ uname -r
+        6.1.166-197.305.amzn2023.x86_64
+        $ rpm -q --provides kernel | grep kernel-x86_64
+        kernel-x86_64 = 1:6.1.166-197.305.amzn2023
+    
+    We need to match that version in our various fields; for example, if we
+    declare Requires for kernel "6.1.166-197.305.amzn2023" (without an
+    epoch), we're requiring a version that doesn't exist, so our package is
+    unusable. We must require kernel "1:6.1.166-197.305.amzn2023" instead.
+    
+    To fix this, introduce the `kernel_epoch` shell variable in
+    `openafs-kmodtool` to support the kernel version epoch, and set it to
+    "1:" for amzn2023.  The new "kernel_epoch" is not set for other
+    RHEL-like distributions (e.g. RHEL, Fedora, Rocky, Alma Linux).
+    
+    Note: The kernel_epoch is not to be confused with the existing epoch
+    macro. The latter is a placeholder for the openafs package version, not
+    the kernel version.
+    
+    FIXES 135591
+    FIXES 135592
+    Reviewed-on: https://gerrit.openafs.org/16777
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Tested-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    (cherry picked from commit 88ac75b008aa38fc77ca96cf6caa9d7f20ea4167)
+    
+    Change-Id: I6668454d0faa22634e7ecf01cba29063dfd0cf6e
+    Reviewed-on: https://gerrit.openafs.org/16783
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 9045e297006dab4bed9e66aa45d2a911fe8b810d
+Author: Cheyenne Wills <cwills@sinenomine.net>
+Date:   Sat Apr 25 10:36:01 2026 -0400
+
+    RedHat: Remove kmod debuginfo pkg on newer distros
+    
+    Starting with RHEL 8 and Fedora 28, building the kmod debuginfo package
+    is done automaticaly when building the kmod package. Currently, we
+    always define an explicit separate debuginfo package for the kmod, which
+    is redundant, and generates numerous warnings because we're effectively
+    making the same package twice. For example:
+    
+        $ make rpm
+        [...]
+        rpmbuild --rebuild [...] packages/openafs-*.src.rpm
+        [...]
+        package kmod-openafs-debuginfo already exists
+        File listed twice: /usr/lib/debug
+        File listed twice: /usr/lib/debug/.build-id/6b/160aa196a99d8416e273152499541bfbd8791b
+        File listed twice: /usr/lib/debug/.build-id/6b/160aa196a99d8416e273152499541bfbd8791b.debug
+        File listed twice: /usr/lib/debug/lib
+        File listed twice: /usr/lib/debug/lib/modules
+        File listed twice: /usr/lib/debug/lib/modules/6.12.0-124.49.1.el10_1.x86_64
+        [...]
+    
+    Remove the explicit kmod debuginfo package for RHEL 8+ and Fedora 28+ to
+    avoid these warnings.
+    
+    Reviewed-on: https://gerrit.openafs.org/16776
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    (cherry picked from commit ab01859f59c89a4235d3d8de164ececa00d60960)
+    
+    Change-Id: I6122812831687b37d326de0f6d2de650c5d6d6fc
+    Reviewed-on: https://gerrit.openafs.org/16782
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 8c3d856b94591328423e148773546c2684af90bd
+Author: Michael Meffie <mmeffie@sinenomine.net>
+Date:   Sat Apr 25 19:56:21 2026 -0400
+
+    RedHat: Remove macros in comment
+    
+    rpmbuild expands macros before processing comments, which is intentional
+    but can lead to surprises.  Remove macros from the comment added in
+    commit ece5b1727a94 (RedHat: Set source_date_epoch to the current system
+    time) to fix the rpmbuild warning message:
+    
+       warning: Macro expanded in comment on line 17: %source_date_epoch_from_changelog to 1 and update the %changelog
+    
+    Reviewed-on: https://gerrit.openafs.org/16775
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    (cherry picked from commit 938b710347d198a33a03dfb1c5612109ed6837be)
+    
+    Change-Id: I245f35e08d20f2cf9b57b8c70fc873ec392d8a3c
+    Reviewed-on: https://gerrit.openafs.org/16781
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 1ef1cf3b31c1c2452227cc49c551d0f50c07bc60
+Author: Michael Meffie <mmeffie@sinenomine.net>
+Date:   Sat Apr 11 12:13:44 2026 -0400
+
+    RedHat: Set source_date_epoch to the current system time
+    
+    Modern versions of rpmbuild (since 2016) support reproducible builds by
+    extracting the timestamp of the last entry of the changelog to use as a
+    build timestamp, called `source_date_epoch`. The `source_date_epoch`
+    timestamp is used to clamp the modification times of the files generated
+    (instead of the current system time), to set timestamps in the package
+    metadata (e.g., BUILDTIME), and to set the SOURCE_DATE_EPOCH environment
+    variable during the build.  The SOURCE_DATE_EPOCH environment variable is
+    honored by the OpenAFS build system by embedding a timestamp in the
+    version string displayed by `rxdebug -version`.
+    
+    Extracting the `source_date_epoch` timestamp from the %changelog works
+    well for downstream packaging, but is not ideal for our in-tree spec
+    file. Since this is used for development and as a reference for
+    packagers, the %changelog is not updated for each release. As a result,
+    the packages built with the in-tree spec file contain very old build
+    dates.
+    
+    This change modifies our in-tree spec file to disable the default
+    behavior of extracting the `source_date_epoch` timestamp from the
+    changelog. Instead, set the `source_date_epoch` to the current system
+    time by default. Support is also added to allow the builder to specify
+    the `source_date_epoch` on the command line or in a macro file (e.g.,
+    ~/.rpmmacros).
+    
+    For example, to specify the timestamp from a tag name:
+    
+        $ rpmbuild --define "source_date_epoch $(git log -1 --format=%ct openafs-stable-1_9_3pre1)" ...
+    
+    To specify the timestamp from the mtime of a file:
+    
+        $ rpmbuild --define "source_date_epoch $(date +%s -r path/to/filename)" ...
+    
+    Include a comment to encourage downstream packagers to set the
+    `source_date_epoch_from_changelog` to 1 and update the %changelog on each
+    release.
+    
+    Reviewed-on: https://gerrit.openafs.org/16772
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    (cherry picked from commit ece5b1727a940e8185f0386b66e874ed0640909b)
+    
+    Change-Id: I08100fcb2c5fc7547de416026f790c9735e9bbaf
+    Reviewed-on: https://gerrit.openafs.org/16780
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
 commit 0b3d8b86df95e78aaa0c05e9439ccaf21d872077
 Author: Michael Meffie <mmeffie@sinenomine.net>
 Date:   Tue Nov 11 15:10:32 2025 -0500

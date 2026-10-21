@@ -78,8 +78,8 @@
 # leave upstream tar-balls untouched for integrity checks.
 
 # update with the version in the tar files (e.g. 1.8.8.1-8-gl18924 )
-%define upstream_version 1.8.16pre1
-%define package_version 1.8.16pre1
+%define upstream_version 1.8.16
+%define package_version 1.8.16
 %define release_version %{?release}%{!?release:1}
 
 Name:           openafs
