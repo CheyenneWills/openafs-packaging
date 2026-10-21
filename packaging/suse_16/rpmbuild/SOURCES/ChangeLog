@@ -1,3 +1,1827 @@
+commit 0b3d8b86df95e78aaa0c05e9439ccaf21d872077
+Author: Michael Meffie <mmeffie@sinenomine.net>
+Date:   Tue Nov 11 15:10:32 2025 -0500
+
+    Make OpenAFS 1.8.16pre1
+    
+    Update version strings for the 1.8.16pre1 release.
+    
+    Change-Id: I2f75a0ffd5c9aa6a68b1d4be70527402ecd1193a
+    Reviewed-on: https://gerrit.openafs.org/16740
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+
+commit e60980e977d9b8d6b407ff0c02d4c89968167f07
+Author: Cheyenne Wills <cwills@sinenomine.net>
+Date:   Wed Apr 1 14:12:10 2026 -0600
+
+    Update NEWS for OpenAFS 1.8.16pre1
+    
+    Change-Id: I0562b97e7dd64b4620280f068fd501ee630a37d3
+    Reviewed-on: https://gerrit.openafs.org/16739
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+    Tested-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 61a4b70259300c14b91d172e61d196f44648dfad
+Author: Andrew Deason <adeason@sinenomine.net>
+Date:   Thu Feb 9 18:35:01 2023 -0600
+
+    libtool: Make libfoo.krb depend on libfoo
+    
+    During parallel builds, we can run the final 'libtool --mode=link'
+    step for, say, pam_afs.la and pam_afs.krb.la in parallel. When libtool
+    runs --mode=link for these libraries, it effectively does the
+    following (amongst many other steps):
+    
+    - rm -rf .libs/"$libname".*
+    - mkdir .libs/"$libname".lax
+    - mkdir .libs/"$libname".lax/libopr_pic.a
+    
+    The 'rm -rf' cleans up any lingering files from previous runs in the
+    .libs dir (e.g. .libs/pam_afs.a, .libs/pam_afs.lai, etc etc). The
+    '.lax' directory is used as a temporary space to extract object files
+    in dependant libs. And of course it creates various other files in
+    there named like .libs/pam_afs.lai.
+    
+    But if we're building a library called pam_afs.krb.la, then some of
+    our temporary files will be named like .libs/pam_afs.krb.lax, which
+    get deleted when building pam_afs.la when it deletes
+    ".libs/pam_afs.*". So, if we build pam_afs.la while the libtool
+    command for pam_afs.krb.la is using .libs/pam_afs.krb.lax, the
+    temporary files can get deleted out from under us, causing rare
+    confusing libtool errors. For example:
+    
+        /bin/sh ../../libtool --quiet --mode=link --tag=CC gcc  -rpath /usr/local/lib \
+                -module -no-undefined -o pam_afs.la [...]
+        /bin/sh ../../libtool --quiet --mode=link --tag=CC gcc  -rpath /usr/local/lib \
+                -module -no-undefined -o pam_afs.krb.la [...]
+        ../../libtool: line 1719: cd: .libs/pam_afs.krb.lax/libopr_pic.a: No such file or directory
+        make[3]: *** [Makefile:76: pam_afs.krb.la] Error 1
+        make[3]: *** Waiting for unfinished jobs....
+    
+    Fortunately, most of the libraries we build don't have dots in their
+    name, and so avoid this issue. But we do have a few libraries that
+    build a ".krb" variant, and so can be impacted by this. This includes
+    pam_afs.krb, libauth.krb, and libkauth.krb.
+    
+    To make sure these libraries don't encounter this problem, make the
+    .krb variant depend on the non-.krb variant, so the libraries aren't
+    built in parallel.
+    
+    Reviewed-on: https://gerrit.openafs.org/15328
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Stephan Wiesand <stephan.wiesand@desy.de>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    (cherry picked from commit d93871b054e814bf0d5b02dc0d06c17845ee4edd)
+    
+    Change-Id: I955d41d2e43440f201d81c544995109a89fe5df0
+    Reviewed-on: https://gerrit.openafs.org/16758
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 3f4168147dd3905a24bcef445f5c9ac553ba5d69
+Author: Mark Vitale <mvitale@sinenomine.net>
+Date:   Wed Mar 25 16:20:30 2026 -0400
+
+    macOS: Package some LWP binaries as x86_64 only
+    
+    Many commands built with LWP currently fail on macOS arm64 (Apple
+    Silicon) on 1.8.x:
+    
+       $ fs mkmount <path> <volname>
+       Segmentation fault: 11
+       $ fs mkmount <path> <volname>
+       Bus error: 10
+    
+    To avoid this, use the 'lipo' utility to convert a few LWP programs to
+    "thin" x86_64 binaries when we build our macOS packages, if we're
+    building universal binaries (ARCHFLAGS="-arch x86_64 -arch arm64").
+    These will run fine on arm64 under automatic Rosetta2 x86_64 amulation,
+    and do not exhibit the same issues with LWP. Save the original binaries
+    in a "bin.orig" directory, so they are still available if needed. Do
+    this for the following binaries:
+    
+    - bos
+    - cmdebug
+    - fs
+    - xstat_cm_test
+    - xstat_fs_test
+    - backup
+    
+    This is a 1.8-only commit. On the master branch, this issue is moot
+    because most binaries have been converted to pthreads in commits such as
+    3ded79e52b (venus: Build fs and friends as pthreaded programs).
+    Converting these programs to pthreads would be a rather large change in
+    the middle of the stable 1.8 series, so at least for now, perform this
+    smaller macOS-only targeted fix for 1.8 instead.
+    
+    Thanks to Ganesh Chaudhari <gangovind@in.ibm.com> for reporting the
+    issue.
+    
+    Change-Id: Ib81d2ddf3ed11188442e22981de092be1101e0a7
+    Reviewed-on: https://gerrit.openafs.org/16753
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 7e3397d4c1187ee691937b1bb73185d818af3c06
+Author: Michael Meffie <mmeffie@sinenomine.net>
+Date:   Mon Mar 23 19:50:56 2026 -0400
+
+    Fix -Wdiscarded-qualifiers warnings from strrchr()
+    
+    In recent versions of GCC (e.g. GCC 14) and of glibc (e.g., 2.43), the
+    strrchr() function has been updated to follow ISO C23 rules, which can
+    trigger the discarded-qualifiers warning when the strrchr() input is a
+    `const char *` but the function return is assigned to a type `char *`.
+    
+    Assigning this result to a `char *` discards the const qualifier, which
+    causes the following build failure when building with the
+    --enable-checking configure option (which adds -Werror to the CFLAGS):
+    
+      compile_et.c:170:7: error: assignment discards ‘const’ qualifier from pointer target type [-Werror=discarded-qualifiers]
+        170 |     p = strrchr(whoami, '/');
+            |       ^
+      cc1: all warnings being treated as errors
+    
+    Change the strrchr() destination pointer from `char *` to `const char *`
+    in the locations where the input string is a const char *.
+    
+    Add a new local variable in compile_et.c for the destination pointer,
+    since the `char *` variable is reused in the affected function.
+    
+    Reviewed-on: https://gerrit.openafs.org/16750
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    (cherry picked from commit a2887dbec96a3da5af5ff932032b936930b305f7)
+    
+    Change-Id: I0780580fcec7429ce10cf8cb2be6855d2f55de48
+    Reviewed-on: https://gerrit.openafs.org/16751
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit befbc5ee733045f522dd74c7b60e46dbce7b5bff
+Author: Cheyenne Wills <cwills@sinenomine.net>
+Date:   Fri Mar 6 12:25:13 2026 -0700
+
+    Linux: Use __getname()/__putname() to alloc name
+    
+    The Linux 7.0 commit:
+       'fs: hide names_cache behind runtime const machinery'
+       (7ca83f8ebe867)
+    make names_cachep a private symbol within namei support.  The commit:
+       'struct filename: use names_cachep only for getname() and friends'
+       (c3a3577cdb351)
+    instructs users of names_cachep to simply allocate the memory via
+    kmalloc.
+    
+    The Linux provided macros __getname() and __putname() perform the
+    required memory allocation/free, switching from names_cachep to kmalloc
+    in c3a3577cdb351.  These two macros have been available since at least
+    2.6.18, so there is no need to add a specific autoconf test for them.
+    
+    Relocate afs_putname() to be ahead of afs_getname() and update to use
+    __putname() to release the name.
+    
+    Update afs_getname() to use __getname() to obtain the storage for the
+    name and call afs__putname() to release the name.
+    
+    Reviewed-on: https://gerrit.openafs.org/16699
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    (cherry picked from commit 2453ac257f8b6993cbb95bee077c332e01dc3551)
+    
+    Change-Id: Id4291990b50b2e5b86d55d4afa32d7d00f875491
+    Reviewed-on: https://gerrit.openafs.org/16738
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 348b82ebb224061fe1dec3701e0c8e367254f207
+Author: Cheyenne Wills <cwills@sinenomine.net>
+Date:   Tue Mar 10 14:24:54 2026 -0600
+
+    Linux: Use set_default_d_op() to set dentry ops
+    
+    The Linux 6.17 commit:
+        'new helper: set_default_d_op()' (05fb0e666495c)
+    replaced the way that the default dentry_operations is set on a
+    super_block. The s_d_op member was renamed to __s_d_op and a new helper
+    function set_default_d_op() is now used to set the default
+    dentry_operations.
+    
+    The OpenAFS commit 'linux: 2.6.38: New d_op handling' (08bb83d950) added
+    an autoconf test for using the s_d_op member in the super_block struct.
+    With the above Linux commit, the test for STRUCT_SUPER_BLOCK_HAS_S_D_OP
+    fails, and the __s_d_op member in the super_block is not set during
+    afs_fill_super(), but instead dp->d_op is set during various vfs
+    operations. Doing so sets the dentry ops for the dentry, but does not
+    set the flag DCACHE_OP_REVALIDATE on the dentry, and so Linux never
+    calls our d_revalidate function, causing dentries to not get properly
+    revalidated.
+    
+    To fix this, add a new autoconf test for set_default_d_op(), and use
+    that function when available. Add a comment for the autoconf test for
+    the super_block member s_d_op to note the change.  Add an additional
+    build time check to ensure that we don't accidentally revert to the
+    pre-2.6.38 behavior after Linux 2.6.38
+    
+    In afs_fill_super(), use set_default_d_op() to initialize the
+    super_block with the afs_dentry_operations.
+    
+    The dentry->d_op member only needs to be updated when set_default_d_op()
+    is not available and the super_block does not have the s_d_op member.
+    
+    Note: This commit fixes a reported problem with stale dentries that was
+    discovered on a Linux 6.17 system.
+    
+    Reviewed-on: https://gerrit.openafs.org/16700
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Tested-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    (cherry picked from commit a99b2ff4c04a9b1a4ba3ab5fac1b37bfd5d43568)
+    
+    Change-Id: Ic454c52ca88c82a9efa62a486ec05300a95c6cb0
+    Reviewed-on: https://gerrit.openafs.org/16729
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 2a3548515dbb607f74ed4dbe1c13ec653d47ed64
+Author: Cheyenne Wills <cwills@sinenomine.net>
+Date:   Mon Feb 23 14:42:40 2026 -0700
+
+    Linux: implement aops->migrate_folio
+    
+    When the address_space_operations method writepages() was implemented in
+    the openafs commit:
+     'linux: convert aops->writepage to writepages' (b2c039541d66e)
+    there should have been an implementation for the
+    aops->migrate_folio method added as well (though it isn't mandatory).
+    
+    Linux provides a fallback if the filesystem has not implemented the
+    migrate_folio method, however the fallback will issue a WARN_ONCE()
+    kernel message:
+    
+    [ 1692.812667] afs_file_aops [libafs] does not implement migrate_folio
+    [ 1692.812745] WARNING: CPU: 1 PID: 62 at mm/migrate.c:1053 move_to_new_folio+0x1a8/0x260
+    [ 1692.812768] Modules linked in: libafs(PO)
+     ... followed by registers and a stack trace ...
+    
+    Since openafs doesn't use folio->private, the Linux provided function
+    migrate_folio() can be used.
+    
+    Move the preprocessor check that defines LINUX_WRITEPAGES_USES_FOLIOS
+    towards the top of the file and add an include for linux/migrate.h.
+    
+    Initialize aops->migrate_folio element in the afs_file_aops structure
+    to use migrate_folio().
+    
+    Note: the migrate_folio method is not documented as being mandatory for
+    a filesystem to implement, however as noted above a kernel warning is
+    issued if a filesystem doesn't implement the method.
+    
+    Looking a several of the other Linux filesystems, the commit messages
+    associated with converting writepage -> writepages do mention having
+    to add a aops->migrate_folio call.  See the Linux commits:
+      'ceph: Remove ceph_writepage()' (19a2881104354) and
+      'orangefs: Remove orangefs_writepage()' (506382dbbedc0)
+    
+    Most in-tree Linux filesystems use filemap_migrate_folio(), which we
+    cannot use because it is GPL-only. migrate_folio() is almost identical
+    to filemap_migrate_folio(); the only differences that are
+    filemap_migrate_folio() handles the folio's folio->private (which we do
+    not use), and migrate_folio() BUG()s if the folio's "writeback" flag is
+    set (which should not happen; Linux waits for writeback to finish before
+    migrating pages).
+    
+    Reviewed-on: https://gerrit.openafs.org/16689
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    (cherry picked from commit daa3eef78addb187ced13355bff01a83f8d16f01)
+    
+    Change-Id: I53108b95e8eb695d951425e7b2d20e0b244736e7
+    Reviewed-on: https://gerrit.openafs.org/16709
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 0bd855886c7b3b094634ac390a3389895fbc3ae0
+Author: Cheyenne Wills <cwills@sinenomine.net>
+Date:   Mon Feb 23 14:43:51 2026 -0700
+
+    Linux: Pass 3rd parameter to filemap_alloc_folio()
+    
+    The Linux 6.19 commit:
+        'mm/filemap: Add NUMA mempolicy support to filemap_alloc_folio()'
+        (7f3779a3ac3e4)
+    added a new parameter for future NUMA work.  Existing callers can pass a
+    NULL for the new parameter.
+    
+    Add a new configure test to determine if filemap_alloc_folio uses 3
+    parameters.
+    
+    Add a small wrapper for filemap_alloc_folio(), afs_filemap_alloc_folio()
+    that uses the appropriate set of parameters for filemap_alloc_folio().
+    Update afs_page_cache alloc() to use the wrapper.
+    
+    Reviewed-on: https://gerrit.openafs.org/16684
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    (cherry picked from commit 19451d31904be9bda1321f3a1ad3bdc2f31d3251)
+    
+    Change-Id: Idcb2096ecb84b7cb2d47744f67bc6da9f81d0f97
+    Reviewed-on: https://gerrit.openafs.org/16708
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 444b4533f00657fe8c5835d45596cb011ad81f60
+Author: Cheyenne Wills <cwills@sinenomine.net>
+Date:   Thu Feb 5 11:14:10 2026 -0700
+
+    Linux: Use sockaddr_unsized for socket->ops->bind
+    
+    The Linux 6.19 commits:
+        'net: Add struct sockaddr_unsized for sockaddr of unknown length'
+        (bf33247a90d3e)
+    and
+        'net: Convert proto_ops bind() callbacks to use sockaddr_unsized'
+        (0e50474fa5148)
+    updated the socket->ops->bind() method's signature to use a
+    'struct sockaddr_unsized *' parameter instead of 'struct sockaddr *'.
+    The only external change is that callers need to switch from casting
+    to a (struct sockaddr *) to casting to a '(struct sockaddr_unsized *)'
+    
+    Add a new configure check to see if socket->ops->bind() requires a
+    sockaddr_unsized parameter.
+    
+    The rx/LINUX rxk_NewSocket_Host is the only location where a call to
+    socket->ops->bind() is made.  Add a C macro to handle the different
+    casts depending on the results of the configure test.
+    
+    Notes:
+    
+    The only other socket->ops change was the connect() method and openafs
+    does not use that method.
+    
+    For reference, see the Linux source for o2net_open_listening_sock() in
+    fs/ocfs2/cluster/tcp.c, where the only change was in the cast used in
+    the sock->ops->bind() call.
+    
+    Reviewed-on: https://gerrit.openafs.org/16683
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    (cherry picked from commit f880d753f4fd866be99c732019b93861eb37769e)
+    
+    Change-Id: I99e27e59d629fef5168d7da69dcc57c080996496
+    Reviewed-on: https://gerrit.openafs.org/16707
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 6a81d2779a8808e67a0a576171f14fb8c88a1da0
+Author: Cheyenne Wills <cwills@sinenomine.net>
+Date:   Thu Feb 5 11:13:09 2026 -0700
+
+    Linux: Move afs_root()/_fill_super() in osi_vfsops
+    
+    Move afs_root() and afs_fill_super() functions ahead of the code that
+    references them. For afs_fill_super(), this eliminates the need to have
+    the preprocessor conditionals around the forward declaration of
+    afs_fill_super().
+    
+    Move the afs_fs_type structure towards the bottom of the file, so that
+    a data structure isn't intermixed with the functions.
+    
+    There are no functional changes in this commit.
+    
+    Reviewed-on: https://gerrit.openafs.org/16673
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    (cherry picked from commit a369df49f842b6f269b8fa2710176a1e9ff92591)
+    
+    Change-Id: I80ae5a6264b6e2c2e83a408f20cab4571af8f280
+    Reviewed-on: https://gerrit.openafs.org/16706
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit c1c2307bc74840af646570f2b84f265e125bf459
+Author: Andrew Deason <adeason@sinenomine.net>
+Date:   Fri Feb 20 13:46:19 2026 -0600
+
+    LINUX: Log warning on recursive folio writeback
+    
+    Since commit 4a587356a3 (linux-mmap-antirecursion-20081020) our page
+    writeback functions have returned AOP_WRITEPAGE_ACTIVATE when detecting
+    a recursive writeback request (afs_linux_writepage_sync() at the time,
+    now afs_linux_prepare_writeback()). At the time, the recursion was noted
+    as following this code path:
+    
+    afs_linux_writepage_sync -> afs_DoPartialWrite -> afs_StoreAllSegments
+    -> osi_VM_StoreAllSegments -> filemap_fdatawrite -> [writeback]
+    
+    Since commit 5e0e1ea254 (linux-mmap-antirecursion-fix-20090512), the
+    vcache was flaged as "in writeback" in afs_linux_writepage_sync()
+    itself, rather than in osi_VM_StoreAllSegments(). But checks to avoid
+    recursive calls were effectively in both afs_linux_writepage_sync()
+    (which returned AOP_WRITEPAGE_ACTIVATE) and osi_VM_StoreAllSegments()
+    (which just skipped the writeback).
+    
+    Later, in commit 95b857399d (Linux: mmap: Apply recursion check only to
+    recursion cases), the check was restricted to catch only actual
+    recursion, so writeback in different processes didn't trigger this.
+    
+    Since then, it's not clear if afs_linux_prepare_writeback() ever
+    actually catches the recursion case and returns AOP_WRITEPAGE_ACTIVATE.
+    With the current code, the above recursion code path now looks like
+    this:
+    
+    afs_linux_end_writeback -> afs_linux_dopartialwrite ->
+    afs_DoPartialWrite -> afs_StoreAllSegments -> osi_VM_StoreAllSegments ->
+    filemap_fdatawrite -> [writeback]
+    
+    But now it shouldn't be possible for osi_VM_StoreAllSegments() to
+    recurse into writeback, since avc->pagewriters will be non-empty when we
+    call it from afs_linux_end_writeback(), and so osi_VM_StoreAllSegments()
+    will return early. Handling the errors for this recursion is a strange,
+    questionably-handled corner case in the page handling code for modern
+    Linux with folios, so it would be nice to remove the
+    AOP_WRITEPAGE_ACTIVATE code paths if they're not needed.
+    
+    However, it's hard to be sure there aren't other code paths that can
+    also trigger similar recursion deadlocks. So for now, log a message with
+    a stack trace when it happens, so we can try to do something about it if
+    the log message is actually seen.
+    
+    Reviewed-on: https://gerrit.openafs.org/16697
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    (cherry picked from commit 1b3b3bc08e36ab5e0ee69e725d9834bfdeb4a4d8)
+    
+    Change-Id: I25d8518a70d1d51c37c9d6e5232bea327d437122
+    Reviewed-on: https://gerrit.openafs.org/16705
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 4f53f2859ce2508ae5600a91e116af2eff5c9c99
+Author: Cheyenne Wills <cwills@sinenomine.net>
+Date:   Thu Feb 5 11:06:59 2026 -0700
+
+    Linux: Avoid write_cache_pages() for ->writepages
+    
+    The Linux 6.18 commit:
+        'mm: remove write_cache_pages' (7bebb41b96b5a)
+    removed the Linux function write_cache_pages() without replacement.
+    
+    Within the OpenAFS kernel module, the function afs_linux_write_pages()
+    implements the address_space_operations method ->writepages(). The
+    afs_linux_write_pages() function calls write_cache_pages() and passes
+    the callback function afs_linux_writefolio_cb() to handle the actual
+    writing of individual folios.
+    
+    write_cache_pages() was a simple function that used writeback_iter() to
+    iterate over dirty pages then called the provided callback function to
+    perform the actual writing:
+    
+        aops->writepages (afs_linux_write_pages)
+            -> write_cache_pages
+               for folio in writeback_iter
+               -> afs_linux_writefolio_cb(folio)
+    
+    With the removal of write_cache_pages(), the OpenAFS kernel module must
+    iterate over the folios that need to be written. However,
+    writeback_iter() is exported as GPL only and cannot be used by the
+    OpenAFS kernel module.
+    
+    Without writeback_iter(), the function afs_linux_write_pages() will need
+    to scan the mapping, in order to find the dirty folios directly.
+    
+    The aops->writepages() method is called to handle writing dirty folios
+    from the page cache.  It is passed 2 parameters: a mapping and a
+    writeback control, and is generally called in 2 situations:
+      1 - To verify that the entire mapping is written to stable storage
+          (typically after a sync, fsync, msync, unmount, etc) - WB_SYNC_ALL
+      2 - During background pagecache cleaning - WB_SYNC_NONE
+    
+    In the first case, the entire specified range within the mapping needs
+    to be scanned to locate and write out any dirty folios.  In the second
+    case the mapping is being processed in chunks of folios and only a
+    suggested number of pages are to be written out (the decision of exactly
+    how many and which folios to be written is left to the individual file
+    system).
+    
+    The writeback control determines if an entire range of folios within the
+    mapping needs to be processed (WB_SYNC_ALL) or we can skip writeout for
+    some pages (WB_SYNC_NONE).
+    
+    For the first case (WB_SYNC_ALL), the scan for dirty folios starts at
+    the specified starting folio and continues up to and including the
+    specified ending folio.
+    
+    For the second case (WB_SYNC_NONE), the scan starts at
+    mapping->writeback_index and ends when the specified number of folios
+    has been written, or we reach the end of the range.  If the end of the
+    range is reached, we set the mapping->writeback_index to 0 before
+    returning.
+    
+    The process for scanning and writing dirty folios within the mapping is
+    mostly the same for both cases.
+    
+      Get a batch of folios tagged with "PAGECACHE_TAG_DIRTY" to look at (or
+        in some cases, tag all dirty folios with PAGECACHE_TAG_TOWRITE, then
+        look for PAGECACHE_TAG_TOWRITE pages).
+      Look at each folio within the batch, if it's not within the provided
+        mapping or it's not dirty, get the next folio from the current
+        batch.
+      Check the folio to see if it's currently already within a writeback.
+        If so and WB_SYNC_ALL then wait for that writeback to finish.
+        Otherwise the writepages call is part of a background cleanup and
+        the folio can be skipped and a future aops->writepages call will
+        handle it.
+      Clear the dirty bit on the folio (and if it wasn't dirty skip
+        additional processing on the folio).
+      Call afs_linux_writefolio_cb() to actually handle the writing of the
+        folio (this clears the PAGECACHE_TAG_TOWRITE/_DIRTY tag when we call
+        folio_start_writeback()).  Mark the mapping if there was an error.
+      Decrement the writeback control's number of pages to be written.
+      If WB_SYNC_NONE, check to see if the writeback control request has
+        been satisfied by writing out the requested number of pages.  If
+        the writeback control is cyclic, update the mapping with the new
+        starting point.  And exit.
+      Continue processing the folios in batches.
+    
+    Update afs_linux_write_pages() with the new logic if the Linux kernel
+    provides filemap_get_folios_tag() and doesn't have write_cache_pages()
+    (LINUX_NEED_CUSTOM_WRITE_CACHE_PAGES). Remove the conditional around
+    including pagevec.h to ensure the fbatch structure gets picked up.
+    (pagevec.h was present in 2.6.12).
+    
+    Note:
+    
+    write_cache_pages() was introduced in 2.6.21 with the commit:
+      'consolidate generic_writepages and mpage_writepages' (0ea9718016251)
+    The callback used by write_cache_pages() was changed to use a folio in
+    6.2 with the commit:
+      'fs: convert writepage_t callback to pass a folio' (d585bdbeb79aa)
+    filemap_get_folios_tag() was introduced with the 6.3 commit:
+      'filemap: add filemap_get_folios_tag()' (247f9e1feef4)
+    folio_batch_next() as introduced in 6.8 with the commit:
+      'pagevec: add ability to iterate a queue' (535c5d9dadb32)
+    
+    Written in collaboration with adeason@sinenomine.net.
+    
+    Reviewed-on: https://gerrit.openafs.org/16648
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Tested-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    (cherry picked from commit 030378b1f430c36de90208dbca55056e05bbb2e3)
+    
+    Change-Id: Id3ccda56e28a3230842175073911bbea2be3ac97
+    Reviewed-on: https://gerrit.openafs.org/16704
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 63a3503240c06187fa87514e5ea421cece483422
+Author: Cheyenne Wills <cwills@sinenomine.net>
+Date:   Thu Jan 8 16:43:19 2026 -0700
+
+    Linux: Introduce LINUX_WRITE_CACHE_PAGES_USES_FOLIOS
+    
+    To clarify what is actually being tested, rename the autoconf test and
+    variable:
+        LINUX_WRITEPAGES_USES_FOLIOS => LINUX_WRITE_CACHE_PAGES_USES_FOLIOS
+    
+    Add a define in osi_vnodeops.c for LINUX_WRITEPAGES_USES_FOLIOS.  This
+    allows future commits to add new cases that also define
+    LINUX_WRITEPAGES_USES_FOLIOS.
+    
+    There are no functional changes in this commit.
+    
+    Reviewed-on: https://gerrit.openafs.org/16650
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    (cherry picked from commit 5a2421f942ddee757093d9bba07d31c55610bc47)
+    
+    Change-Id: If404489eba41f4633de0cebe0d3c44336ae61032
+    Reviewed-on: https://gerrit.openafs.org/16703
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 11849e96820eca64d91742a8c521614e1e99d9fa
+Author: Andrew Deason <adeason@sinenomine.net>
+Date:   Fri Feb 20 11:57:49 2026 -0600
+
+    LINUX: Re-dirty folio on writepages recursion
+    
+    Commit b2c039541d (linux: convert aops->writepage to writepages)
+    introduced afs_linux_writefolio_cb(), and returned early when
+    afs_linux_begin_writeback() detects recursion and returns
+    AOP_WRITEPAGE_ACTIVATE. This follows similar existing logic in
+    afs_linux_writepage(), but in this code path where write_cache_pages()
+    calls afs_linux_writefolio_cb(), there is not much special handling for
+    the AOP_WRITEPAGE_ACTIVATE return code (write_cache_pages() just unlocks
+    the page).
+    
+    In afs_linux_writefolio_cb(), when we see AOP_WRITEPAGE_ACTIVATE and
+    return, the page has not actually been written out and we never called
+    folio_start_writeback() on the page. write_cache_pages() calls our
+    afs_linux_writefolio_cb() after calling folio_clear_dirty_for_io(), so
+    the dirty flag has been cleared on the page at this point. (Via:
+    write_cache_pages -> writeback_iter -> writeback_get_folio ->
+    folio_prepare_writeback -> folio_clear_dirty_for_io.) And
+    folio_clear_dirty_for_io() clearly states in its comments that we are
+    supposed to call either folio_start_writeback() or folio_mark_dirty()
+    afterwards, in order to ensure coherence between the page's dirty flag
+    and the page's dirty xarray tag.
+    
+    Also in this AOP_WRITEPAGE_ACTIVATE code path, we never folio_put() our
+    extra folio_get()'d reference from earlier in this function, since we
+    don't go through our 'goto done' destructor.
+    
+    So, to make sure the page is properly still marked as dirty in the
+    AOP_WRITEPAGE_ACTIVATE case, call folio_mark_dirty() on it. Also release
+    the extra reference with folio_put().
+    
+    Also return a normal success, instead of returning the special value
+    AOP_WRITEPAGE_ACTIVATE. Our caller, write_cache_pages(), just unlocks
+    the page and ignores the error, so returning this special value doesn't
+    do anything special here, and just perpetuates a weird inconsistent
+    calling convention.
+    
+    Reviewed-on: https://gerrit.openafs.org/16696
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    (cherry picked from commit 291a26a23bcf18b09f0c571d793273cc5e909123)
+    
+    Change-Id: I8d2890070f9f87bfb51454f35a1a35fdb2b4edff
+    Reviewed-on: https://gerrit.openafs.org/16702
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit c02a8f451b48766aa163e729abe40d145751b2dc
+Author: Cheyenne Wills <cwills@sinenomine.net>
+Date:   Thu Jan 8 09:38:31 2026 -0700
+
+    Linux: Use get_tree_nodev
+    
+    The Linux 6.18 commit:
+        'fs: Remove mount_nodev' (56ecfd9175b99)
+    removed the mount_nodev() function that is used to handle the mount
+    process.
+    
+    The OpenAFS Linux kernel module must use the newer mount APIs that were
+    introduced with the Linux 5.0 commit:
+        'introduce fs_context methods' (f3a09c92018a9)
+    And the helper that was added with the Linux 5.2 commit:
+        'convenience helper get_tree_nodev()' (2ac295d4f0c09)
+    
+    The newer mount API requires a filesystem to implement the methods
+    defined within the fs_context_operations structure.  Of these methods,
+    the only one needed for OpenAFS is the .get_tree() method which will
+    simply return the result of a get_tree_nodev() call.
+    
+    Add an autoconf test for get_tree_nodev(), which is the replacement for
+    mount_nodev() but using the newer mount APIs.
+    
+    Add a fs_context_operations structure that sets the get_tree method to
+    point to afs_fc_get_tree(), which simply returns the value from
+    get_tree_nodev().
+    
+    Add a function (afs_init_fs_context) to handle the file_system_type's
+    init_fs_context method.  afs_init_fs_context() will update the
+    fs_context to point to the afs_fs_context_ops.
+    
+    Update the afs_fs_type structure to initialize the init_fs_context and
+    parameters members.
+    
+    Notes:
+    The other methods within the fs_context_operations struct would only be
+    applicable if OpenAFS was using private storage in the the fs_context,
+    or needed to process command line parameters.
+    
+    The commit is retroactive back to Linux 5.2 since that is when the
+    Linux kernel introduced get_tree_nodev().
+    
+    Reviewed-on: https://gerrit.openafs.org/16646
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    (cherry picked from commit 8d1ccc2b22a63053a0f15bd432033ca57a2110e7)
+    
+    Change-Id: I231a1d85cc3fdcfb1b4c06a3916e36dcd338d187
+    Reviewed-on: https://gerrit.openafs.org/16701
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit d23608f72a7456dfe7194363491b0fa6685c4f5e
+Author: Michael Meffie <mmeffie@sinenomine.net>
+Date:   Thu Jan 29 20:05:21 2026 +0100
+
+    Make OpenAFS 1.8.15
+    
+    Update version strings for the 1.8.15 release.
+    
+    Change-Id: If51c61988374058caf789c5fb9e7446982dc7937
+    Reviewed-on: https://gerrit.openafs.org/16687
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit b2519eeb09bcd93f2eda3eb34ea522489d83abf3
+Author: Michael Meffie <mmeffie@sinenomine.net>
+Date:   Tue Nov 11 15:10:32 2025 -0500
+
+    Make OpenAFS 1.8.15pre1
+    
+    Update version strings for the 1.8.15pre1 release.
+    
+    Change-Id: I83ca4b0c6a72affaf3529cb6503cff2e1d31454d
+    Reviewed-on: https://gerrit.openafs.org/16617
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 0928123c3a83f3d6e36a1ac0d2466d851b1281a7
+Author: Michael Meffie <mmeffie@sinenomine.net>
+Date:   Thu Nov 6 20:28:01 2025 -0500
+
+    Update NEWS for OpenAFS 1.8.15pre1
+    
+    Change-Id: I7bbbc4cf98d60c4296c3719fb204d667235b64e5
+    Reviewed-on: https://gerrit.openafs.org/16613
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 5bbc578f0852c6f953fbae679fa33671e15e16cb
+Author: Mark Vitale <mvitale@sinenomine.net>
+Date:   Thu Dec 11 17:38:43 2025 -0500
+
+    DARWIN: Use AFS_LDRULE for privhelper
+    
+    The OpenAFS macOS (DARWIN) build process supports a builder-supplied
+    ARCHFLAGS with multiple values.  This allows building a single package
+    that can install and run on any supported architecture (currently x86_64
+    and arm64).  Executables created this way are known as "Universal"
+    binaries.
+    
+    However, since its introduction (120871f03f38 "DARWIN: Add 'privhelper'
+    tool for PrefPane"), the privhelper has only been built for the native
+    platform.  This is because its makefile ignores ARCHFLAGS.
+    
+    This results in the following symptoms:
+    - If the package is built on x86 but installed on arm64:
+      The org.openafs.privhelper will be x86-only and so requires and runs
+      under Rosetta 2.
+      If the OpenAFS cache manager is started using the prefpane (via the
+      privhelper), this also results in the afsd threads running as x86 under
+      Rosetta 2.
+      However, both the prefpane and Cache Manager seems to work correctly
+      under Rosetta 2.
+    
+    - If the package is built on arm64 but installed on x86:
+      The org.openafs.privhelper will be arm-only and will fail to start.
+      Therefore any prefpane operation requiring the privhelper will either
+      fail or hang.
+      However, the Cache Manager will work correctly.
+    
+    Modify the makefile to use AFS_LDRULE, so we respect ARCHFLAGS, CFLAGS,
+    and any other related flags.
+    For example, now ARCHFLAGS='-arch arm64 -arch x86_64' will build a universal
+    package (including a universal privhelper) that will run natively
+    regardless of the architecture of the build host or the install host.
+    
+    Reviewed-on: https://gerrit.openafs.org/16654
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    (cherry picked from commit 755cdbe546581746af1c819468d584c9cd414bf0)
+    
+    Change-Id: I9a750c36f7d06750eb15922f1e1baded9d9f8953
+    Reviewed-on: https://gerrit.openafs.org/16662
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit a6a13a72042ccd7e966484bdf79068d1297e7e1f
+Author: Andrew Deason <adeason@sinenomine.net>
+Date:   Mon Nov 17 20:39:50 2025 -0600
+
+    afs: Save local copy of afs_fakestat_enable
+    
+    Since commit 629d080654 ("This is mostly a rewrite..."),
+    afs_InitFakeStat() does nothing if afs_fakestat_enable is 0; it does not
+    even set state->valid and leaves it uninitialized. When
+    afs_PutFakeStat() is called later on (or one of the EvalFakeStat
+    functions), as its caller must do, if afs_fakestat_enable is now
+    non-zero, we will assert that state->valid is non-zero. But state->valid
+    is uninitialized, and so may be zero; if it's zero, we'll panic the
+    machine.
+    
+    Normally, the value of afs_fakestat_enable cannot change while we're
+    running. But it does change at least once: during the startup sequence,
+    afsd calls the AFSOP_SET_FAKESTAT syscall (if -fakestat or -fakestat-all
+    are passed), which sets afs_fakestat_enable.
+    
+    Most code paths calling afs_InitFakeStat() / afs_PutFakeStat() are not
+    possible until afsd has finished its startup sequence, since /afs is not
+    mounted and files aren't accessible. But pioctls can be issued before
+    /afs is mounted (with a NULL avc), and all pioctls call
+    afs_InitFakeStat() and afs_PutFakeStat().
+    
+    So, if someone runs a pioctl while 'afsd -fakestat' is running its
+    startup sequence, it is possible for afs_fakestat_enable to be 0 while
+    afs_InitFakeStat() is called, and nonzero when afs_PutFakeStat() is
+    called, potentially causing a failed assert. This is possibly most
+    likely with the PSetTokens/PSetTokens2 pioctls, since those operations
+    involve taking other locks (such as afs_xuser), which may involve
+    dropping AFS_GLOCK, allowing the value of afs_fakestat_enable to change
+    in another afsd process.
+    
+    To fix this, change afs_InitFakeStat() to always initialize the 'state'
+    struct, and remember the value of afs_fakestat_enable in a new struct
+    afs_fakestat_state field called 'fakestat_enable'. Change other code
+    paths using struct afs_fakestat_state to use state->fakestat_enable
+    instead of the afs_fakestat_enable global; this helps ensure consistent
+    behavior in the code that uses the struct afs_fakestat_state, even if
+    the value of the afs_fakestat_enable global changes.
+    
+    While we're doing this, change all users of afs_fakestat_enable to try
+    to avoid reading the value of afs_fakestat_enable multiple times in the
+    same code path, and instead store a local copy of the value once. It
+    should not be possible for the value of afs_fakestat_enable to actually
+    change in these other code paths, but do this for consistency and extra
+    safety.
+    
+    After this commit, there are still a few code paths remaining that read
+    afs_fakestat_enable multiple times. Some callers do something like this:
+    
+        if (afs_fakestat_enable) {
+            afs_InitFakeStat(&fakestate);
+            afs_TryEvalFakeStat(...);
+            afs_PutFakeStat(&fakestate);
+        }
+    
+    And dentry_revalidate_common() calls afs_InitFakeStat(), and then later
+    calls parent_vcache_dv(), which also itself calls afs_InitFakeStat().
+    
+    Those code paths are also effectively re-reading afs_fakestat_enable
+    (since afs_InitFakeStat() itself reads afs_fakestat_enable). But fixing
+    those involves either rearranging the afs_InitFakeStat() calls or
+    changing the afs_InitFakeStat() API. Fixing those cases is left for
+    future commits; this commit just handles these easier cases.
+    
+    FIXES 135594
+    
+    Reviewed-on: https://gerrit.openafs.org/16631
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+    (cherry picked from commit d6f04a42dea931de50e027e66926889cb7e05072)
+    
+    Change-Id: I122fa459c1f9f30fa9613887eb9f08225a83f2a2
+    Reviewed-on: https://gerrit.openafs.org/16653
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit a7170839e03b3da7673ec7536e627883d6f997d6
+Author: Ben Huntsman <ben@huntsmans.net>
+Date:   Fri Jan 31 20:22:39 2025 -0800
+
+    revert: Deorbit AIX-specific QuickStartGuide bits
+    
+    This reverts commit c16ec571273b03e9d4f4905efdeaa2182bbe0c6a,
+    which removed the AIX-specific documentation from the Quick Start
+    guide.  With the AIX port working again, bring this documentation
+    back into the Quick Start Guide.
+    
+    Reviewed-on: https://gerrit.openafs.org/16216
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    (cherry picked from commit c9eb881d7fd0ab2da2cc2f76d36de545f26719e3)
+    
+    Change-Id: I1a9854ce3ae09c299e8dd0b959ed3ded8fb862b3
+    Reviewed-on: https://gerrit.openafs.org/16635
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 1a6417dd54adf686323ed214c0abbc702fbe32fa
+Author: Ben Huntsman <ben@huntsmans.net>
+Date:   Tue Dec 10 19:05:20 2024 -0800
+
+    cf: Set default --with-aix-soname to 'svr4'
+    
+    OpenAFS builds both shared and static libraries by default. On most
+    platforms, each library is built as a shared library libfoo.so.x.y.z,
+    and as a static library libfoo.a. libtool refers to this as the 'svr4'
+    style of libraries on AIX.
+    
+    On AIX, traditionally libraries are built with the shared library,
+    static library, and various versions and 64-bit variants and such all
+    contained in the same libfoo.a. libtool refers to this as the 'aix'
+    style of libraries on AIX.
+    
+    libtool defaults to the 'aix' style on AIX, and so this is how libtool
+    attempts to build our libraries on AIX. For many of our libraries, even
+    though the build completes successfully, this results in broken
+    binaries because our Makefile rules assume the shared and static library
+    files have different names.
+    
+    For example, here is the install rule for librokenafs:
+    
+    install: $(SHARED_LIBS) librokenafs.a
+             $(LT_INSTALL_DATA) librokenafs.la $(DESTDIR)$(libdir)/librokenafs.la
+             $(RM) $(DESTDIR)$(libdir)/librokenafs.la
+             $(INSTALL_DATA) librokenafs.a $(DESTDIR)$(libdir)/librokenafs.a
+    
+    On AIX, the LT_INSTALL_DATA step will install the shared library
+    librokenafs.a into $(DESTDIR)$(libdir). Then the INSTALL_DATA step will
+    install the static library librokenafs.a into the same location,
+    deleting the shared library file.
+    
+    When the user tries to run an executable, they get an error, because the
+    shared library librokenafs is not installed at all:
+    
+    $ /opt/openafs/bin/pts
+    exec(): 0509-036 Cannot load program /opt/openafs/bin/pts because of the following errors:
+            0509-150   Dependent module /opt/openafs/lib/librokenafs.a(librokenafs.so.2) could not be loaded.
+            0509-152   Member librokenafs.so.2 is not found in archive
+    
+    To avoid this, the user can run configure with --with-aix-soname=svr4 to
+    build all of our shared libraries in the 'svr4' style. In the above
+    example, this causes LT_INSTALL_DATA to install the shared librokenafs
+    as librokenafs.so.* into $(DESTDIR)$(libdir), and then the static
+    library is installed as librokenafs.a like normal. The resulting
+    binaries can then run without issue.
+    
+    To make it so users don't need to specify --with-aix-soname=svr4 to get
+    a working build, change the default behavior to --with-aix-soname=svr4
+    by passing aix-soname=svr4 to LT_INIT.
+    
+    However, just specifying LT_INIT([aix-soname=svr4]) alone does not work,
+    due to a bug in libtool: https://savannah.gnu.org/support/?111161
+    
+    To workaround this bug, also explicitly turn on shared and static
+    libraries by default in LT_INIT, even though they are already on by
+    default. Using --disable-shared or --disable-static should still be
+    honored as normal; the LT_INIT arguments just specify the default
+    values.
+    
+    Ideally, we would install our shared libraries in the 'aix' style, so a
+    single libfoo.a contains all of the necessary .o and .so files for that
+    library. However, changing our build system to do this is difficult. And
+    historically, OpenAFS has built shared libraries on AIX in the 'svr4'
+    style; that is how we built shared libraries in OpenAFS 1.6 and earlier,
+    before we converted to using libtool.
+    
+    Reviewed-on: https://gerrit.openafs.org/15983
+    Reviewed-by: Ben Huntsman <ben@huntsmans.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    (cherry picked from commit b0e852bc1ab776cbfba770b23db7c07b662c958e)
+    
+    Change-Id: I831d71ace97f6b3a1eaa47df5e0fd1ed3ceb3850
+    Reviewed-on: https://gerrit.openafs.org/16634
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 367adc7ef8433b7f73bff5834feac9b3d34c8f70
+Author: Ben Huntsman <ben@huntsmans.net>
+Date:   Sun Nov 24 11:10:14 2024 -0800
+
+    lwp: Ignore and clean the rw test utility
+    
+    The lwp test utility "rw" is not built by default.  But if someone
+    builds it explicitly, we should clean it during an clean pass.
+    Also add it to a .gitignore file.
+    
+    Reviewed-on: https://gerrit.openafs.org/15972
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    (cherry picked from commit 65a891b126ad3e7d6de463eae830035d3bbe6712)
+    
+    Change-Id: I53f5fb8eb65cfacf3d389c4ab13cbe2cb4ede5df
+    Reviewed-on: https://gerrit.openafs.org/16633
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 63e5034c311155361e19bb18666447a2bd9b7213
+Author: Ben Huntsman <ben@huntsmans.net>
+Date:   Fri Dec 27 12:11:47 2024 -0800
+
+    export: Call execerror as /usr/sbin/execerror
+    
+    On AIX, there are two kernel extensions, and each
+    is loaded by a utility in src/export, cfgexport,
+    and cfgafs.  This utility calls the AIX "sysconfig"
+    system call to load the extension into the kernel.
+    Historically this usually works so error messages
+    are not often seen, though the programs have
+    facilities to display error messages.
+    
+    Error messages from the loading of kernel extensions
+    are displayed using the execerror utility. Beginning
+    with AIX 4.2, this utility was moved from
+    /etc/execerror to /usr/sbin.  The AFS cfg utlities
+    were never updated.  If an error occurs during
+    loading of one of the extensions, the user receives
+    the following misleading error:
+    
+    SYS_KLOAD: No such file or directory
+    
+    This error is not actually the result of the failed
+    extension load, but actually the result of the next
+    source code line:
+    
+    perror("SYS_KLOAD");
+    
+    This error is actually a statement that the utility
+    cannot find execerror.
+    
+    Update the utilities to call execerror from the
+    correct location starting with AIX 4.2.
+    
+    Reviewed-on: https://gerrit.openafs.org/16006
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Ben Huntsman <ben@huntsmans.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    (cherry picked from commit 3b605e621fee7403f20722d0c9b9f742ee998515)
+    
+    Change-Id: Ia7f66a606b4f898a821cf18da4bad66126671eb9
+    Reviewed-on: https://gerrit.openafs.org/16129
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit e555c9cf3c2b6966559e34d646245cdc93c237ff
+Author: Andrew Deason <adeason@sinenomine.net>
+Date:   Thu May 18 17:18:53 2023 -0500
+
+    export: Modernize code
+    
+    Update the source code in src/export in various ways to use more
+    modern conventions:
+    
+    - Get rid of K&R-style arguments. (An exception is error() and
+      sys_error() in cfgexport.c, which use old-style arguments as a cheap
+      imitation of varargs functions.)
+    
+    - Declare various local functions and globals as 'static'
+    
+    - Declare static functions before they are called (or move them, for
+      small functions like usage())
+    
+    - Declare functions as returning 'int' if they had no type
+    
+    - Declare all unspecified types as 'int' (function return types,
+      arguments, and variables)
+    
+    - Include string.h for memset(), strcmp(), etc, and stdlib.h for
+      exit()
+    
+    - Don't declare our own malloc()
+    
+    - Remove a few unused or #ifdef'd out functions
+    
+    Reviewed-on: https://gerrit.openafs.org/15449
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Ben Huntsman <ben@huntsmans.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    (cherry picked from commit 3e360702426986424b9fdd69215c6fbb92f37e9a)
+    
+    Change-Id: Ie1c4a1082e68d7cad36f49b6493394ba0bbbce69
+    Reviewed-on: https://gerrit.openafs.org/16128
+    Reviewed-by: Ben Huntsman <ben@huntsmans.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 6fc9cf88a05b11183e737a3e8f0a64227c30cf97
+Author: Andrew Deason <adeason@sinenomine.net>
+Date:   Tue Jan 7 16:25:35 2025 -0600
+
+    rx: Include rx_lwp.h et al in fallback rx_atomic.h
+    
+    In rx_atomic.h, our "fallback" implementation of atomics uses a global
+    lock, using our afs_kmutex_t/MUTEX_ENTER() abstractions, but rx_atomic.h
+    doesn't include any headers to define afs_kmutex_t et al. Most callers
+    include rx_lwp.h or an equivalent before rx_atomic.h, but this is not
+    guaranteed, and tests/rx/atomic-t.c (for example) does not do this.
+    
+    If someone tries to build OpenAFS on a platform that doesn't have a more
+    specific rx atomic implementation, this means that building atomic-t
+    fails:
+    
+        In file included from /.../tests/rx/atomic-t.c:34:
+        /.../include/rx/rx_atomic.h: In function ‘rx_atomic_set’:
+        /.../include/rx/rx_atomic.h:402:5: error: implicit declaration of function ‘MUTEX_ENTER’ [-Werror=implicit-function-declaration]
+             MUTEX_ENTER(&rx_atomic_mutex);
+             ^~~~~~~~~~~
+        /.../include/rx/rx_atomic.h:402:18: error: ‘rx_atomic_mutex’ undeclared (first use in this function); did you mean ‘rx_atomic_set’?
+             MUTEX_ENTER(&rx_atomic_mutex);
+                          ^~~~~~~~~~~~~~~
+                          rx_atomic_set
+    
+    To fix this, include rx_lwp.h in the "fallback" branch of rx_atomic.h
+    (or rx_kmutex.h for the kernel, or rx_pthread.h for pthreads). This
+    should ensure that our locking abstractions are defined appropriately so
+    we can use the rx_atomic_mutex global lock.
+    
+    Reviewed-on: https://gerrit.openafs.org/16062
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Ben Huntsman <ben@huntsmans.net>
+    Tested-by: Ben Huntsman <ben@huntsmans.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    (cherry picked from commit 18b4243772c361c460ee255f7ddabbecbee5071c)
+    
+    Change-Id: Ia8a3b69568d37d941f69d05a8fe9cc64d593676c
+    Reviewed-on: https://gerrit.openafs.org/16127
+    Reviewed-by: Ben Huntsman <ben@huntsmans.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 53c4464883ec27f89bf34a50bb1b6c6f78f5da3c
+Author: Ben Huntsman <ben@huntsmans.net>
+Date:   Mon Dec 2 16:43:57 2024 -0800
+
+    rx: Use sys/atomic_op.h on AIX 4.1+
+    
+    Since commit 4505af8002 (aix: add atomic support), rx_atomic.h has used
+    sys/atomic_op.h on AIX 6.1 and newer, but sys/atomic_op.h is available
+    as far back as AIX 4.1. So, use sys/atomic_op.h on AIX 4.1+, so older
+    versions of AIX can use proper atomics instead of the fallback
+    implementation.
+    
+    Reviewed-on: https://gerrit.openafs.org/15975
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    (cherry picked from commit e79985dbf21acec5915e5ee75a42a34db0540848)
+    
+    Change-Id: I1e7ce32aa76b18bb084111141dbf214019b75db5
+    Reviewed-on: https://gerrit.openafs.org/16126
+    Reviewed-by: Ben Huntsman <ben@huntsmans.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 63163f26ef43920a93633c562a624257cb6684c2
+Author: Andrew Deason <adeason@sinenomine.net>
+Date:   Fri Dec 30 19:17:10 2022 -0600
+
+    rx: Fix rx_atomic.h style nits
+    
+    Fix a few style nits in rx_atomic.h that have crept up over the years:
+    
+    - Make function definitions begin with a bare "{" line
+    - Indent preprocessor directives
+    - Add comments to the #endif of large #if blocks
+    - Fix style of multi-line comments
+    
+    Reviewed-on: https://gerrit.openafs.org/15280
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+    (cherry picked from commit 1f2a35871b5e9b93c766be04c196522112ff5009)
+    
+    Change-Id: Ieae8bee059c060a8f4044fa371058e79f2441efc
+    Reviewed-on: https://gerrit.openafs.org/16125
+    Reviewed-by: Ben Huntsman <ben@huntsmans.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+
+commit eb6753d93b930ad7d65772a9751117f6969a5e92
+Author: Andrew Deason <adeason@sinenomine.net>
+Date:   Thu Oct 23 20:27:26 2025 -0500
+
+    LINUX: Zero code on EEXIST in afs_linux_read_cache
+    
+    In afs_linux_read_cache(), if we get a -EEXIST error from
+    afs_add_to_page_cache_lru(), we'll effectively ignore the error, and go
+    through the surrounding while() loop again to retry getting the relevant
+    page. But when we do so, 'code' is still set to -EEXIST. So if
+    find_get_page() now returns non-NULL, we'll break out of the while()
+    loop, and continue through the rest of the function with 'code' still
+    set. We won't update the given page, and we'll never set 'code' to
+    anything else, eventually returning the confusing error -EEXIST.
+    
+    While triggering this may be a hard race to hit (it would require the
+    backing page to suddenly exist between find_get_page() and
+    afs_add_to_page_cache_lru()) and hasn't been known to actually happen,
+    this seemingly could cause a afs_linux_readpage()/afs_linux_read_folio()
+    to fail unexpectedly, possibly causing a spurious SIGBUS, which would be
+    hard to identify.
+    
+    To avoid this, set 'code' to 0 after examining 'code' after the
+    afs_add_to_page_cache_lru() call. Add some braces around the nearby 'if'
+    to help make it clear this is outside of that block.
+    
+    This issue appears to have existed since this function was introduced in
+    commit f75d84c404 (Add support for blocking readahead).
+    
+    Reviewed-on: https://gerrit.openafs.org/16590
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    (cherry picked from commit aef55ce9e114fc1a8e16b82eadde5ead583d7b0d)
+    
+    Change-Id: I868d76873a8b12a98a036c69144674a4bde3f703
+    Reviewed-on: https://gerrit.openafs.org/16616
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit ec0be688f46ae7becf39bd1b24ea06f199212035
+Author: Andrew Deason <adeason@sinenomine.net>
+Date:   Tue Jun 3 16:04:31 2025 -0500
+
+    afs: Pass relative cb time to CBHash in afs_create
+    
+    Currently, after calling an RPC that returns a CallBack promise, various
+    vnode operations call something like this to queue the callback
+    information locally:
+    
+        afs_QueueCallback(tvc, CBHash(CallBack.ExpirationTime), volp);
+    
+    CBHash takes a relative time in seconds, and converts it to 128-second
+    units, for use with our local 128-second buckets for tracking callback
+    timeouts.
+    
+    Most callers just pass the CallBack.ExpirationTime returned from the
+    relevant RPC. But in afs_create() since OpenAFS 1.0, we add the 'now'
+    timestamp (the time when we started calling the RPC) to
+    CallBack.ExpirationTime, making it an absolute timestamp, causing us to
+    queue the callback in an arbitrary bucket. If we queue it in a bucket
+    further in the future than it's supposed to be, we won't clear the
+    CStatd flag on the vcache until much later than we're supposed to.
+    
+    For example:
+    
+    Say we create a file at time 1748960984, and we get an ExpirationTime of
+    14516 (about 4 hours). In afs_create(), tvc->cbExpires is correctly
+    calculated to be 1748975500, but CBHash is given 1748975500, not 14516.
+    So afs_QueueCallBack is given a hash index of 13663871, and so we queue
+    the callback to bucket 127 (13663871 % CBHTSIZE == 127; assume 'base' is
+    0). If we gave the correct relative time 14516 to CBHash, we'd get a
+    bucket of 113.
+    
+    We won't process the callback expiration (via afs_CheckCallbacks()) until
+    we get to timeout bucket 127. We advance to the next timeout bucket
+    about every 127 seconds (via afs_BumpBase()), so that means we won't
+    process the callback for 16129 seconds. But the callback promise was
+    only good for 14516 seconds; plus an extra 180 seconds or so for the
+    viced ServerBias, so about 14696 seconds. That means there is a window
+    of over 1000 seconds where the fileserver thinks the callback promise
+    has expired, but the client thinks the callback is still valid. If
+    someone else modifies the file during that window, the client won't see
+    a callback break, and so will serve stale data to users.
+    
+    This situation is perhaps unlikely, since it requires the newly-created
+    file to be untouched for between about 4 and 4.5 hours (the fileserver
+    uses different callback times for different file usage, but a
+    newly-created file can't have any other users, so should always get a
+    callback of 4 hours). Also, the queued callback gets put in effectively
+    a random timeout bucket, and we must put it in a timeout bucket further
+    away than the correct bucket (if we put it in a closer bucket, we'll
+    just check the expiration time too early, and then move it to the
+    correct bucket). The correct bucket will be about 113 away, and there
+    are only 128 buckets. So we have a 113/128 == 88% chance of not
+    triggering the problem; only a 12% chance that the issue is possible at
+    the current time.
+    
+    However, if the fileserver ever returns a shorter callback expiration
+    time for a newly-created file, this issue could be much more likely to
+    occur.
+    
+    To fix this, pass a relative time to the CBHash call for
+    afs_QueueCallback (the untouched CallBack.ExpirationTime) in
+    afs_create(), like we do for all other CBHash callers.
+    
+    Also initialize 'now' to the current time before our do/while retry
+    loop, to make sure 'now' is initialized. Otherwise, some compilers
+    complain that 'now' may be used uninitialized, even though this
+    shouldn't actually be possible:
+    
+        .../src/afs/VNOPS/afs_vnop_create.c: In function ‘afs_create’:
+        .../src/afs/VNOPS/afs_vnop_create.c:452:48: error: ‘now’ may be used uninitialized in this function [-Werror=maybe-uninitialized]
+               tvc->cbExpires = CallBack.ExpirationTime + now;
+                                ~~~~~~~~~~~~~~~~~~~~~~~~^~~~~
+        cc1: all warnings being treated as errors
+    
+    Reviewed-on: https://gerrit.openafs.org/16601
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+    (cherry picked from commit 9a1ae4f4ad6af62b24c4fe4a3a78bea052177043)
+    
+    Change-Id: I4d63ddbc8017216669d60cf0c1bb19d066ec37ae
+    Reviewed-on: https://gerrit.openafs.org/16612
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 0d3c54b6a02dc4b4d9a2e627f3a55be7fc653fc2
+Author: Andrew Deason <adeason@sinenomine.net>
+Date:   Thu Sep 18 14:11:10 2025 -0500
+
+    lwp: Install compat header /usr/include/lock.h
+    
+    Commit 60da5c6988 (lwp: Rename lock.h to afs/afs_lock.h) renamed lwp's
+    lock.h to afs/afs_lock.h, but old software (for example, dumpscan) may
+    still try to include lock.h. For now, provide a lock.h header that just
+    includes afs/afs_lock.h, to allow such software to potentially still
+    build, but is otherwise unnecessary.
+    
+    This commit deliberately names the file in src/lwp something besides
+    lock.h (old_lock_compat.h), to make sure nothing in the OpenAFS tree
+    accidentally includes the header.
+    
+    Reviewed-on: https://gerrit.openafs.org/16550
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    (cherry picked from commit 8a88905d315d81d7ceeebe0640d5bfbfe3e3f759)
+    
+    Change-Id: I204e5d16edd24cf1e5af6c99b066cd8b464c6c90
+    Reviewed-on: https://gerrit.openafs.org/16611
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit b95afb6c3acf0439fd011434ca12de2268c72881
+Author: Alex Dehnert <adehnert@mit.edu>
+Date:   Sat Aug 23 12:18:06 2025 -0400
+
+    lwp: Rename lock.h to afs/afs_lock.h
+    
+    OpenAFS installs a /usr/include/lock.h, which is a very generic name for
+    an OpenAFS-specific file. It seems prudent to avoid using such a generic
+    name to avoid conflicts.
+    
+    In particular, Python 3.13 *also* introduces a "lock.h" file, which means that
+    software that builds with OpenAFS and Python is likely to break (see
+    https://github.com/mit-athena/python-afs/issues/6#issuecomment-3089981708).
+    Python is renaming their lock.h, probably starting in Python 3.15, but it would
+    be good to deconflict on machines with 3.13 and 3.14 as well as other projects
+    that might use that name.
+    
+    This change was partially automated, using the following commands:
+    git grep --name-only '"lock.h"' src/vol | xargs sed -i -e 's%^#include "lock.h"%#include <afs/afs_lock.h>%'
+    git grep --name-only '<lock.h>' | xargs sed -i -e 's%^#include <lock.h>%#include <afs/afs_lock.h>%'
+    find . -name Makefile.in | xargs sed -i -e 's#${TOP_INCDIR}/lock.h#${TOP_INCDIR}/afs/afs_lock.h#'
+    
+    Reviewed-on: https://gerrit.openafs.org/16496
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    (cherry picked from commit 60da5c6988f4192c98ad643141e14991b3166c6e)
+    
+    Change-Id: I6d0d5514c0e3f567620d1da78738637c52286f9b
+    Reviewed-on: https://gerrit.openafs.org/16610
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 5f5d5c48c00b509827166211abde2a7b87f2ae44
+Author: Alex Dehnert <adehnert@mit.edu>
+Date:   Sat Aug 2 13:07:00 2025 -0400
+
+    bucoord: Remove unneeded lock.h include
+    
+    dump.c doesn't appear to use anything from lock.h, so remove the
+    include. Note that it still includes lock.h indirectly (dump.c ->
+    afs/tcdata.h -> afs/budb.h -> ubik.h -> lock.h), so even if it did
+    depend on something we wouldn't expect an error.
+    
+    Reviewed-on: https://gerrit.openafs.org/16495
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Alex Dehnert <adehnert@mit.edu>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    (cherry picked from commit 675071c170a64dcc3b734cf551a45ba2444d21b0)
+    
+    Change-Id: I6fb658abb3d394499e673b618d90aa85d003450f
+    Reviewed-on: https://gerrit.openafs.org/16605
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit c379ff006d8b7db425f7648321c549ab24919d92
+Author: Cheyenne Wills <cwills@sinenomine.net>
+Date:   Thu Oct 23 15:15:38 2025 -0600
+
+    linux: remove implied def HAVE_LINUX_FILEMAP_GET_FOLIO
+    
+    Commit:
+      Linux: Use struct kiocb * for aops write_begin/end (1ad827ded0ed9)
+    added 2 implied defines in osi_vnodeops, one for
+    HAVE_LINUX_WRITE_BEGIN_END_FOLIO and one for HAVE_LINUX_FILEMAP_GET_FOLIO.
+    The HAVE_LINUX_FILEMAP_GET_FOLIO was not needed, and causes a build
+    failure:
+    
+      osi_vnodeops.c:4056:10: error: "HAVE_LINUX_FILEMAP_GET_FOLIO" redefined [-Werror]
+       4056 | # define HAVE_LINUX_FILEMAP_GET_FOLIO
+            |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    
+    This is because the configure test for __filemap_get_folio() succeeds
+    (linux 6.15 and later) and the test for write_begin/end functions take a
+    kiocb also succeeds (6.17 or later).
+    
+    Remove the unnecessary define.
+    
+    Reviewed-on: https://gerrit.openafs.org/16589
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    (cherry picked from commit 503ef823970695eb646a323f38b9c07d52971e69)
+    
+    Change-Id: I6a5768ac8e8f7cce79c5fbd67d5dcebfb4aead98
+    Reviewed-on: https://gerrit.openafs.org/16604
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit a765a9ddd412c8d1e5cb0f5cf497a8606251811e
+Author: Cheyenne Wills <cwills@sinenomine.net>
+Date:   Tue Oct 21 13:55:48 2025 -0600
+
+    Linux: Use struct kiocb * for aops write_begin/end
+    
+    The Linux 6.17 commit:
+        fs: change write_begin/write_end interface to take struct kiocb *
+        (e9d8e2bf23206)
+    changed the address_space_operations members write_begin and write_end
+    to use a 'struct kiocb *' instead of a 'struct file *' as the first
+    parameter.
+    
+    The passed kiocb structure contains a pointer (ki_filp) to the file
+    structure that is associated with the operation.
+    
+    Update the afs_linux_write_begin() and afs_linux_write_end() to accept
+    a 'struct kiocb *' instead of a 'struct file *', and obtain the file
+    pointer directly from kiocb.
+    
+    Add an autoconf test to determine if aops->write_begin()/aops->write_end
+    uses a struct kiocb * as the first parameter.
+    
+    Reviewed-on: https://gerrit.openafs.org/16558
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    (cherry picked from commit 1ad827ded0ed970540b6836250f2395ae31b84bc)
+    
+    Change-Id: I59d37422a280716dac3398c039fc728911a7bef2
+    Reviewed-on: https://gerrit.openafs.org/16603
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 175cb545c4f3d26c41f21f8578e69b350204000a
+Author: Andrew Deason <adeason@sinenomine.net>
+Date:   Wed Jun 19 16:33:56 2024 -0500
+
+    xdr: Set 0 _len with NULL _val
+    
+    When passing a struct to an RPC with an OUT opaque or array arg, a few
+    callers give a NULL _val (to indicate that xdr should allocate the
+    memory for us), but leave _len uninitialized. This is okay, because xdr
+    ignores the _len when _val is NULL, but set _len to 0 in these cases
+    just in case, and to be more consistent with other callers.
+    
+    Reviewed-on: https://gerrit.openafs.org/16240
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    (cherry picked from commit 22f87bcb04d9127f8c8c11ebb3b8cd96028c3d4a)
+    
+    Change-Id: I45820542940ce66e7b392f060cd4b867c8f2ee2a
+    Reviewed-on: https://gerrit.openafs.org/16267
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit d87b1ebf71367d36c1580c3b4980addfc8af0502
+Author: Andrew Deason <adeason@sinenomine.net>
+Date:   Mon Jun 17 14:34:37 2024 -0500
+
+    afs: Always "goto out" in PGetVolumeStatus
+    
+    A few error code paths in PGetVolumeStatus were "return"ing directly,
+    without going through the "goto out" destructor, allowing our allocated
+    memory to be leaked. Fix these to go through the "goto out" destructor.
+    
+    Reviewed-on: https://gerrit.openafs.org/16238
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    (cherry picked from commit 801c18bf8a973846e4d7be3bc04dc92f14eb9da2)
+    
+    Change-Id: I9f1e8445a3dabb847adb0674611dc853c6629f88
+    Reviewed-on: https://gerrit.openafs.org/16262
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit 73f313faa9c7f33fa297898a52f54096a4a85be5
+Author: Andrew Deason <adeason@sinenomine.net>
+Date:   Mon Sep 18 16:08:46 2023 -0500
+
+    viced: Give an actual 'prname' to hpr_NameToId
+    
+    In MapName_r(), we cast 'uname' (a char*) into a prname* when
+    populating a 'namelist' to give to hpr_NameToId(). A 'prname' is just
+    an rxgen-derived typedef for char[PR_MAXNAMELEN], which looks similar
+    to a char*, but is a fixed-size array.
+    
+    MapName_r() passes the given 'namelist' to hpr_NameToId(), which calls
+    ubik_PR_NameToID() -> PR_NameToID() -> xdr_namelist() -> xdr_array()
+    -> xdr_prname() -> xdr_vector(). That will send exactly PR_MAXNAMELEN
+    characters of the given name to the wire, even if the string is only a
+    few characters long. If the given string is significantly shorter than
+    PR_MAXNAMELEN characters, then we may send uninitialized data from the
+    stack on the wire.
+    
+    The ptserver should ignore any data after the trailing NUL byte in the
+    string, but the data will still be exposed on the wire, possibly
+    allowing others to see the uninitialized stack data.
+    
+    To fix this, copy the given string into a local blanked 'prname', and
+    use that instead, avoiding the cast.
+    
+    Also fix the 'ptclient' program, which uses a proper 'prname' array,
+    but doesn't initialize all of the memory, causing a similar problem.
+    Just change a malloc() to calloc() to fix it.
+    
+    All other callers of PR_NameToID pass a properly-initialized 'prname'
+    (or an array of them), or use strncpy() to copy the given string,
+    which fills the given array with NUL bytes. However, change several
+    callers to memset() or calloc() the relevant memory, to try to avoid
+    similar mistakes in the future (for example, if someone changes a
+    strncpy() call to strlcpy()).
+    
+    The issue in the fileserver calling hpr_NameToId() was introduced in
+    commit 8a040cfd848410b75b4e5ac5498f00f073932598 (viced: remove static
+    local realms), included in OpenAFS 1.8.0, since the given string was
+    no longer NUL-filled by strncpy().
+    
+    FIXES 135444
+    
+    Reviewed-on: https://gerrit.openafs.org/16147
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Tested-by: Andrew Deason <adeason@sinenomine.net>
+    (cherry picked from commit c57eddb1f24eba22902fe7726c54baedef642e06)
+    
+    Change-Id: I92c279ae33ae7de9ce58be4d7cb3cf0ac57bada9
+    Reviewed-on: https://gerrit.openafs.org/16207
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit fb1cfa3b830c04b28a18081654a2fdd01955f4ef
+Author: Andrew Deason <adeason@sinenomine.net>
+Date:   Mon Sep 18 16:03:08 2023 -0500
+
+    viced: Protect vlConn in TryLocalVLServer
+    
+    In TryLocalVLServer(), 'vlConn' is a static rx_connection that is
+    initialized just once. But no locks are held in this function, and so
+    theoretically one thread could try to use vlConn while another is
+    setting it, which is not safe.
+    
+    This function is only used for RXAFS_GetVolumeInfo, an old RPC that
+    isn't called by anything in OpenAFS. Maybe this RPC can be disabled
+    entirely, but for now at least protect vlConn with FS_LOCK to make
+    sure it doesn't cause a segfault or memory corruption.
+    
+    Some other races are possible with 'down' and 'lastDownTime', but
+    these just determine whether we exit early, and so racing on those is
+    not such a big problem.
+    
+    FIXES 135444
+    
+    Reviewed-on: https://gerrit.openafs.org/16146
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Marcio Brito Barbosa <mbarbosa@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    (cherry picked from commit 035cb883454eb5a6fac3dc1e3f8ef17a9f3f169e)
+    
+    Change-Id: I1210f01cc42ae563c0b62aa9788018015dadc06c
+    Reviewed-on: https://gerrit.openafs.org/16206
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
+commit a9b4ce2ec32994d5873eadeeb58fe73d35e30862
+Author: Andrew Deason <adeason@sinenomine.net>
+Date:   Mon Sep 18 16:10:27 2023 -0500
+
+    viced: calloc stats in SRXAFS_GetStatistics64
+    
+    Since it was introduced in commit
+    b651ece9bdb2ea9dc19907a5686e9d084f3c03d6
+    (large-partition-support-20080305), SRXAFS_GetStatistics64 allocates
+    the stats memory with malloc(), and never sets the STATS64_BOOTTIME
+    stat. As a result, the value for STATS64_BOOTTIME contains
+    uninitialized heap data when sent over the wire.
+    
+    To fix this, change the stats to be calloc'd instead of malloc'd.
+    
+    FIXES 135444
+    
+    Reviewed-on: https://gerrit.openafs.org/16145
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Cheyenne Wills <cwills@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    (cherry picked from commit d9f6a21326bb609d7c5e1d0d80ad792b9fe786cc)
+    
+    Change-Id: I32ffdcc4b2e14a6d3f4dc8cd903bb5b65d1813b0
+    Reviewed-on: https://gerrit.openafs.org/16205
+    Reviewed-by: Mark Vitale <mvitale@sinenomine.net>
+    Reviewed-by: Michael Meffie <mmeffie@sinenomine.net>
+    Reviewed-by: Andrew Deason <adeason@sinenomine.net>
+    Tested-by: BuildBot <buildbot@rampaginggeek.com>
+    Reviewed-by: Benjamin Kaduk <kaduk@mit.edu>
+
 commit eed2428e0b3c876b5405362cc9d2f3e3c4f4830b
 Author: Michael Meffie <mmeffie@sinenomine.net>
 Date:   Thu May 15 11:29:19 2025 -0600
@@ -20905,7 +22729,7 @@ Date:   Wed Jul 10 15:14:28 2019 -0500
     Reviewed-by: Stephan Wiesand <stephan.wiesand@desy.de>
 
 commit 7e42148ee75ff523cd232658fd3f46945f5920ce
-Merge: 5004f888e3 06b800f6f1
+Merge: 5004f888e32e 06b800f6f102
 Author: Benjamin Kaduk <kaduk@mit.edu>
 Date:   Thu Jan 14 14:24:38 2021 -0800
 
@@ -53081,7 +54905,7 @@ Date:   Thu Jan 30 13:50:11 2014 -0600
     Tested-by: BuildBot <buildbot@rampaginggeek.com>
 
 commit d820af6cd0eb1c6655ecf8e210294791825cfbad
-Merge: ad71d031ec bd2cc32da9
+Merge: ad71d031ec21 bd2cc32da969
 Author: Simon Wilkinson <sxw@your-file-system.com>
 Date:   Wed Apr 9 14:10:09 2014 +0100
 
@@ -59231,7 +61055,7 @@ Date:   Sat Jul 13 21:29:19 2013 -0400
     Reviewed-by: Jeffrey Altman <jaltman@your-file-system.com>
 
 commit 92148709443ed622bd25aba38e83b25ca77950a1
-Merge: e2d458c119 e79102e791
+Merge: e2d458c11956 e79102e7918c
 Author: Simon Wilkinson <sxw@your-file-system.com>
 Date:   Wed Jul 24 15:55:26 2013 +0100
 

@@ -1,7 +1,7 @@
 # Openafs Spec
 
-%define afsvers 1.8.15
-%define pkgvers 1.8.15
+%define afsvers 1.8.16pre1
+%define pkgvers 1.8.16pre1
 # for beta/rc releases make pkgrel 0.<tag>
 # for real releases make pkgrel 1 (or more for extra releases)
 %define pkgrel 1

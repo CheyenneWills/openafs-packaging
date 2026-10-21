@@ -1,5 +1,111 @@
                        User-Visible OpenAFS Changes
 
+OpenAFS 1.8.16pre1
+
+  All platforms
+
+    * A build error has been fixed for platforms with glibc 2.43 or later and C
+      compilers which are enforcing ISO C23 rules. This change fixes a
+      build error on Ubuntu 26.04 development releases (16751).
+
+    * A build error during parallel builds has been fixed (16758).
+
+  Linux client
+
+    * A bug that caused dentries to not properly be revalidated on Linux 6.17
+      has been fixed. The bug manifested as not seeing filename changes made on
+      other clients; that is, files being renamed, created, or deleted (16729).
+
+    * A Linux kernel function for folio migration has been implemented,
+      silencing a kernel log message warning that a fallback implementation
+      was used instead (16709).
+
+    * A potential bug (with no known path to trigger it) has been fixed where
+      a recursive writeback operation left page dirty flags in an inconsistent
+      state (potentially leading to data corruption) or leaked a folio
+      reference (in effect, leaking memory) (16702).
+
+    * A Linux kernel log message is issued if an unexpected recursive call to
+      writeback occurs. While this condition should not cause any problems,
+      the message should be reported. (16705).
+
+    * Support for Linux kernel 6.18 has been added (16701, 16703, 16704).
+
+    * Support for Linux kernel 6.19 has been added (16707, 16708).
+
+    * Support for Linux kernel 7.0 has been added (16738).
+
+  MacOS client
+
+    * Several binaries (bos, cmdebug, fs, xstat_cm_test, xstat_fs_test, and
+      backup) are now distributed as x86_64-only thin binaries, instead of as
+      universal binaries like all other commands. On arm64, these commands will
+      still run automatically via Rosetta2. This avoids an issue where those
+      binaries experienced segfaults in LWP in arm64 code. The original
+      universal binaries for these utilities are distributed in
+      /Library/OpenAFS/Tools/bin.orig/. (16753)
+
+OpenAFS 1.8.15
+
+  All platforms
+
+    * The generically named lock.h header file has been renamed to
+      afs/afs_lock.h to avoid conflicts with other software.  For
+      backward compatibility, a wrapper lock.h is still provided, ensuring
+      that older software built against OpenAFS will continue to compile. Any
+      users of lock.h should update to using afs/afs_lock.h as soon as
+      possible; the lock.h wrapper will be removed in the future.
+      (16605, 16610, 16611)
+
+  All server platforms
+
+    * A fileserver bug has been fixed where uninitialized data from the
+      stack could be sent over the network when handling certain
+      protection-related RPCs. This change prevents a potential information
+      leak. (16207)
+
+    * A potential race condition has been fixed in the fileserver that was
+      only triggerable by the obsolete RXAFS_GetVolumeInfo RPC. (16206)
+
+    * A fileserver bug has been fixed where the SRXAFS_GetStatistics64 RPC
+      could send 4 bytes of uninitialized memory over the network. This change
+      prevents a potential information leak from the fileserver. (16205)
+
+  All UNIX clients
+
+    * A long-standing bug has been fixed in the afs_create() operation where
+      callback expiration was processed incorrectly.  This could lead
+      to processes reading stale data for newly-created files under certain
+      conditions. (16612)
+
+    * A memory leak during error conditions in the PGetVolumeStatus pioctl
+      has been fixed. (16262)
+
+    * A race condition has been fixed where the client asserts during startup
+      when the client was started with `afsd -fakestat` or `afsd -fakestat-all`
+      and a user attempts to set a token early in the startup. (16653)
+
+  Linux client
+
+    * Support for Linux kernel 6.17 has been added. (16603, 16604)
+
+    * A potential race condition on Linux clients has been fixed that could
+      cause a spurious SIGBUS error when reading memory-mapped files from AFS.
+      This bug was introduced in OpenAFS 1.6.0. (16616)
+
+  MacOS client
+
+    * A bug has been fixed where the privhelper component of the prefpane was
+      not honoring the configured compiler flags.  This caused the prefpane
+      operations to not work on x86 for universal packages built on arm. (16662)
+
+  AIX
+
+    * Build support for AIX has been improved. (16125, 16126, 16127, 16128,
+      16129, 16633, 16634)
+
+    * Installation instructions for AIX have been reinstated. (16635)
+
 OpenAFS 1.8.14
 
   All platforms

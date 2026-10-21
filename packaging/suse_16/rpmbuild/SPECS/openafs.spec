@@ -53,7 +53,12 @@
 %define build_kernel_modules 1
 %endif
 
+# flag for firewalld, only required for SLE-12
+%if 0%{?sle_version} <= 120500 && !0%{?is_opensuse}
+%define have_firewalld 0
+%else
 %define have_firewalld 1
+%endif
 
 #
 # package internal directories
@@ -73,8 +78,8 @@
 # leave upstream tar-balls untouched for integrity checks.
 
 # update with the version in the tar files (e.g. 1.8.8.1-8-gl18924 )
-%define upstream_version 1.8.15
-%define package_version 1.8.15
+%define upstream_version 1.8.16pre1
+%define package_version 1.8.16pre1
 %define release_version %{?release}%{!?release:1}
 
 Name:           openafs
@@ -100,6 +105,7 @@ Source15:       logrotate.openafs-server
 Source18:       RELNOTES
 Source19:       ChangeLog
 Source20:       kernel-source.build-modules.sh
+Source22:       openafs-client-systemd-helper.sh
 Source23:       openafs-client.service
 Source24:       openafs-client.service.allow_unsupported
 Source25:       openafs-server.service
@@ -521,7 +527,12 @@ cp -a %{S:57} %{buildroot}/%{viceetcdir}/ThisCell
 cp -a %{S:58} %{buildroot}/%{viceetcdir}/cacheinfo
 cp -a src/afs/afszcm.cat %{buildroot}%{_datadir}/openafs/C
 install -m 644 %{S:27} %{buildroot}/%{_fillupdir}/sysconfig.openafs-client
+install -m 755 %{S:22} %{buildroot}/%{viceetcdir}/openafs-client-systemd-helper.sh
+%if 0%{?sle_version} > 150000 
 install -m 644 %{S:24} %{buildroot}/%_unitdir/openafs-client.service
+%else
+install -m 644 %{S:23} %{buildroot}/%_unitdir
+%endif
 ln -s %{_sbindir}/service %{buildroot}/%{_sbindir}/rcopenafs-client
 
 #
@@ -728,6 +739,7 @@ echo sh ./build-modules.sh install
 
 %preun fuse_client
 %service_del_preun openafs-fuse-client.service
+%{stop_on_removal}
 
 %post fuse_client
 if [ ! -d /afs ]; then
@@ -790,6 +802,7 @@ else
 fi
 
 %preun client
+%{stop_on_removal}
 %service_del_preun openafs-client.service
 
 %postun client
@@ -833,6 +846,7 @@ dkms remove -m %{name} -v %{version} --rpm_safe_upgrade --all ||:
 
 %preun server
 %service_del_preun openafs-server.service
+%{stop_on_removal}
 
 %postun server
 /sbin/ldconfig
@@ -971,6 +985,7 @@ dkms remove -m %{name} -v %{version} --rpm_safe_upgrade --all ||:
 %doc %{_mandir}/man8/fstrace.8.gz
 %doc %{_mandir}/man8/fstrace_*.8.gz
 %_unitdir/openafs-client.service
+%{viceetcdir}/openafs-client-systemd-helper.sh
 %doc %{_mandir}/man1/copyauth.1.gz
 %doc %{_mandir}/man5/cacheinfo.5.gz
 %doc %{_mandir}/man5/afs_cache.5.gz
